@@ -21,6 +21,7 @@ independentes.
 | `specsfy/` | visão geral pública detalhada |
 | `specialists/` | skills técnicas opcionais |
 | `cli/` | instalação, TUI e progresso visual |
+| `deco/` | extensão organizacional opcional mantida no fork Educamundo; regras de comportamento, contrato de handoff e artefatos de instalação; não redefine specs, fases ou gates do Specsfy |
 
 - Execute Git somente na raiz do monorepo.
 - Mantenha regras de exclusão somente no `.gitignore` da raiz; módulos não
@@ -54,6 +55,11 @@ independentes.
 - `VERSION` na raiz é a única fonte da versão pública do Specsfy. CLI, skills,
   especialistas, ebook, manifests, tag e GitHub Release usam esse mesmo SemVer.
   O Hub e o website ficam fora desse ciclo e mantêm versões próprias.
+
+`deco/` é uma camada aditiva mantida neste fork. Ela não cria uma segunda
+metodologia, não redefine specs, fases ou gates e não transforma a raiz do
+monorepo em projeto consumidor. A fonte da camada está em
+`deco/rules/canonical.md`.
 
 Não crie `plan.md`, `tasks.md`, `research.md`, `data-model.md` ou outra fonte
 normativa paralela.

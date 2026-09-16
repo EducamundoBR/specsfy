@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "layerVersion": "0.1.0-draft",
+  "status": "draft",
+  "compatibleSpecsfy": ">=0.22.2 <0.23.0",
+  "filesScope": "distribution artifacts; excludes manifest.json and fixtures/",
+  "files": [
+    {
+      "source": "rules/canonical.md",
+      "role": "rules",
+      "destination": ".deco/RULES.md",
+      "install": "required",
+      "sha256": "7a6e34f7ca87e726f4996623e47a81a71d85530ee6b2c5e60b1ffca9bab91649"
+    },
+    {
+      "source": "rules/candidates.md",
+      "role": "rules-candidates",
+      "destination": ".deco/CANDIDATES.md",
+      "install": "optional",
+      "sha256": "5e8e9c5a908852ffbb3cec179fff91038f90251549e95b39ecedeee26d2d33ae"
+    },
+    {
+      "source": "skills/fechar-sessao-deco/SKILL.md",
+      "role": "skill",
+      "destination": ".agents/skills/fechar-sessao-deco/SKILL.md",
+      "install": "required",
+      "sha256": "459d13dc1fc710d2d1ea6ffab745e3034786c3774109e1b691710920419d7dd6"
+    },
+    {
+      "source": "templates/HANDOFF.md",
+      "role": "handoff-pointer",
+      "destination": "docs/HANDOFF.md",
+      "install": "required",
+      "sha256": "b2717c4cf6cee78304c98371d576682d32736b7551b1370a03d9afd346561ae9"
+    },
+    {
+      "source": "templates/session-handoff.md",
+      "role": "handoff-snapshot-template",
+      "destinationPattern": "docs/sessoes/<AAAA-MM-DD>-handoff.md",
+      "install": "required",
+      "sha256": "dad211ea0338927a2dd5773dce15bed9501e092b0d56ae36ed0732e2d89e536a"
+    },
+    {
+      "source": "README.md",
+      "role": "documentation",
+      "destination": null,
+      "install": "never",
+      "sha256": "39ac8cf03a716c4f01710eb20eeb181034b988b782268c7cecb5c626cbc49e61"
+    }
+  ]
+}
