@@ -62,8 +62,52 @@ deco/
 ├── templates/
 │   ├── HANDOFF.md                     ponteiro para o snapshot ativo
 │   └── session-handoff.md             base do snapshot datado
-└── fixtures/handoff/                  cenários documentais para o verifier da v0.2
+├── fixtures/handoff/                  cenários documentais para o verifier da v0.2
+└── specs/                             specs do desenvolvimento da própria camada
+    └── <NNNN>-<slug>/
+        ├── spec.md                    fonte normativa da fatia (Specsfy/2.0)
+        └── research/                  evidência derivada das fontes externas
 ```
+
+Subpastas adicionais de uma fatia — contratos materializados, harness de
+conformidade, registro de piloto — não são estrutura fixa deste módulo: cada
+fatia as define no seu Plan Gate. Não presuma caminhos que a spec ainda não
+fixou.
+
+### Sobre `deco/specs/`
+
+Esta pasta guarda as specs que governam o **desenvolvimento da camada**. Ela não
+torna o monorepo um projeto consumidor e não cria fonte normativa paralela:
+
+- **Decisão local de roteamento:** nesta versão, as specs da camada vivem em
+  `deco/specs/<NNNN>-<slug>/`, sem segmento físico `<estado>/`. São specs de
+  definição da própria camada distribuível; o estado vive no front matter ou
+  cabeçalho e nos gates. A decisão permanece sujeita ao Definition Gate e não é
+  regra global do Specsfy: projetos consumidores continuam seguindo o próprio
+  roteamento aplicável.
+- A proibição de `AGENTS.md:37-38` é sobre criar `specs/` **na raiz** do
+  monorepo. `deco/specs/` vive dentro do módulo, cujo ownership o `AGENTS.md`
+  já atribui a este fork.
+- A fonte da camada continua sendo `deco/rules/canonical.md`. Uma spec aqui
+  governa o **comportamento da fatia em desenvolvimento** — o escopo que
+  `docs/develop/context/README.md:72-81` já atribui a `spec.md` — e nada mais.
+- A precedência da spec é **interina**. Enquanto a fatia atravessa Definition,
+  Plan e Delivery, a spec governa aquela fatia. Depois da materialização e do
+  aceite, **os arquivos operacionais produzidos passam a ser a norma técnica
+  vigente** e a spec passa a registrar decisão, rastreabilidade e histórico, sem
+  competir com eles. Decisão de negócio aprovada no Notion mantém precedência
+  própria em qualquer momento.
+- Promover contratos de uma fatia a `deco/rules/canonical.md` é decisão separada,
+  com gate próprio, registrada na spec correspondente.
+- Nada em `deco/specs/` é instalado em consumidores: o `manifest.json` não a
+  declara, e seu `filesScope` cobre apenas artefatos de distribuição.
+
+Specs vigentes:
+
+| Spec | Assunto | Estado |
+| --- | --- | --- |
+| `0001-ponte-notion-repositorio/` | ponte Notion ↔ repositório: cockpit, Consulta SDD, Modo B, proveniência e reconciliação | `Defined`; Definition Gate `Passed`; Plan Gate e Delivery Gate `Pending` |
+| `0002-governanca-sdd/` | governança transversal do SDD: risco, gates, preflight, sessão e repasse | `Defined`; Definition Gate `Passed`; Plan Gate e Delivery Gate `Pending` |
 
 ## Destinos pretendidos no consumidor
 

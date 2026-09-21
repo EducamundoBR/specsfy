@@ -3,7 +3,7 @@
   "layerVersion": "0.1.0-draft",
   "status": "draft",
   "compatibleSpecsfy": ">=0.22.2 <0.23.0",
-  "filesScope": "distribution artifacts; excludes manifest.json and fixtures/",
+  "filesScope": "distribution artifacts; excludes manifest.json, fixtures/, and specs/",
   "files": [
     {
       "source": "rules/canonical.md",
@@ -45,7 +45,7 @@
       "role": "documentation",
       "destination": null,
       "install": "never",
-      "sha256": "39ac8cf03a716c4f01710eb20eeb181034b988b782268c7cecb5c626cbc49e61"
+      "sha256": "fb6010919d2668d399013b81e76f9140069f370a10816551d9a91d820864bba6"
     }
   ]
 }
