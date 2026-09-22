@@ -78,18 +78,133 @@ def executable_checks(
     artifact = ROOT / GOVERNANCE_VALIDATOR
     exists = artifact.is_file() if sample is None else True
     content = artifact.read_text(encoding="utf-8") if exists and sample is None else sample or ""
+    regions = associated_executable_regions(content, ac)
+    executable_regions = [
+        region
+        for region in regions
+        if re.search(r"\b(?:if|switch|return|throw)\b|process\.exit", region)
+    ]
     return [
         ("validador presente", exists),
-        (f"caso executável {ac}", ac in content),
-        (
-            "ramificação executável",
-            bool(re.search(r"\b(?:if|switch|function)\b|=>", content)),
-        ),
+        (f"contexto executável {ac}", bool(regions)),
+        ("decisão associada ao AC", bool(executable_regions)),
         *[
-            (obligation, bool(re.search(expression, content, re.IGNORECASE | re.DOTALL)))
+            (
+                obligation,
+                any(
+                    re.search(expression, region, re.IGNORECASE | re.DOTALL)
+                    for region in executable_regions
+                ),
+            )
             for obligation, expression in clauses.items()
         ],
     ]
+
+
+def strip_javascript_comments(source: str) -> str:
+    """Remove comentários JS sem transformar texto em código executável."""
+    output: list[str] = []
+    index = 0
+    state = "code"
+    quote = ""
+    while index < len(source):
+        char = source[index]
+        following = source[index + 1] if index + 1 < len(source) else ""
+        if state == "code":
+            if char in ("'", '"', "`"):
+                state, quote = "string", char
+                output.append(char)
+            elif char == "/" and following == "/":
+                state = "line-comment"
+                output.extend((" ", " "))
+                index += 1
+            elif char == "/" and following == "*":
+                state = "block-comment"
+                output.extend((" ", " "))
+                index += 1
+            else:
+                output.append(char)
+        elif state == "string":
+            output.append(char)
+            if char == "\\" and following:
+                output.append(following)
+                index += 1
+            elif char == quote:
+                state = "code"
+        elif state == "line-comment":
+            output.append("\n" if char == "\n" else " ")
+            if char == "\n":
+                state = "code"
+        else:
+            output.append("\n" if char == "\n" else " ")
+            if char == "*" and following == "/":
+                output.append(" ")
+                index += 1
+                state = "code"
+        index += 1
+    return "".join(output)
+
+
+def associated_executable_regions(source: str, ac: str) -> list[str]:
+    """Isola decisões explicitamente registradas para um AC, sem fixar a implementação."""
+    executable = strip_javascript_comments(source)
+    associations: list[tuple[int, int, str, str]] = []
+    patterns = (
+        ("handler", re.compile(
+            r"[\"'](?P<ac>AC-\d{3})[\"']\s*:\s*(?:async\s+)?"
+            r"(?:function\b(?:\s+[\w$]+)?\s*\([^)]*\)|"
+            r"(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>)"
+        )),
+        ("statement", re.compile(r"\bif\s*\([^)]*[\"'](?P<ac>AC-\d{3})[\"'][^)]*\)")),
+        ("case", re.compile(r"\bcase\s+[\"'](?P<ac>AC-\d{3})[\"']\s*:")),
+    )
+    for kind, pattern in patterns:
+        associations.extend(
+            (match.start(), match.end(), match.group("ac"), kind)
+            for match in pattern.finditer(executable)
+        )
+    for match in re.finditer(
+        r"\bfunction\s+[\w$]*ac[_-]?(?P<number>\d{3})[\w$]*\s*\([^)]*\)",
+        executable,
+        re.IGNORECASE,
+    ):
+        associations.append((match.start(), match.end(), f"AC-{match.group('number')}", "handler"))
+    associations.sort()
+    regions: list[str] = []
+    for start, end, associated_ac, kind in associations:
+        if associated_ac != ac:
+            continue
+        if kind == "case":
+            following = re.search(r"\b(?:case\s+[^:]+|default)\s*:", executable[end:])
+            region_end = end + following.start() if following else len(executable)
+        else:
+            cursor = end
+            while cursor < len(executable) and executable[cursor].isspace():
+                cursor += 1
+            if cursor < len(executable) and executable[cursor] == "{":
+                depth = 0
+                quote = ""
+                region_end = len(executable)
+                for position in range(cursor, len(executable)):
+                    char = executable[position]
+                    previous = executable[position - 1] if position else ""
+                    if quote:
+                        if char == quote and previous != "\\":
+                            quote = ""
+                    elif char in ("'", '"', "`"):
+                        quote = char
+                    elif char == "{":
+                        depth += 1
+                    elif char == "}":
+                        depth -= 1
+                        if depth == 0:
+                            region_end = position + 1
+                            break
+            else:
+                terminator = re.search(r"[,;\n]", executable[cursor:])
+                region_end = cursor + terminator.end() if terminator else len(executable)
+        regions.append(executable[start:region_end])
+    return regions
 
 
 class GovernanceDeliveryTest(unittest.TestCase):
@@ -242,11 +357,76 @@ class GovernanceDeliveryTest(unittest.TestCase):
         self.assertTrue(all(checks[f"token exato {token}"] for token in ("PRONTO", "ENTREGUE", "ACEITO")))
         self.assertFalse(checks["estrutura de decisão condição → resultado"])
 
-    def test_negative_validator_comments_without_branch_are_rejected(self) -> None:
-        sample = "// AC-033: ação irreversível exige gate humano\n"
-        checks = dict(executable_checks("AC-033", {}, sample=sample))
-        self.assertTrue(checks["caso executável AC-033"])
-        self.assertFalse(checks["ramificação executável"])
+    def test_negative_ac_headers_and_unrelated_empty_function_are_rejected(self) -> None:
+        sample = """
+        // AC-032: revisão verde
+        // AC-033: gate humano
+        /* AC-034: serviço externo */
+        function unrelated() {}
+        """
+        for ac in ("AC-032", "AC-033", "AC-034"):
+            with self.subTest(ac=ac):
+                self.assertFalse(dict(executable_checks(ac, {}, sample=sample))[f"contexto executável {ac}"])
+
+    def test_negative_commented_ac_tokens_and_generic_branch_are_rejected(self) -> None:
+        sample = """
+        // AC-032 AC-033 AC-034
+        function decide(value) { if (value) return true; return false; }
+        """
+        for ac in ("AC-032", "AC-033", "AC-034"):
+            with self.subTest(ac=ac):
+                self.assertFalse(dict(executable_checks(ac, {}, sample=sample))["decisão associada ao AC"])
+
+    def test_negative_unassociated_ac_constants_and_function_are_rejected(self) -> None:
+        sample = """
+        const contracts = { "AC-032": () => {} };
+        function unrelated(value) { if (value) return "continue"; return "stop"; }
+        """
+        checks = dict(executable_checks("AC-032", {}, sample=sample))
+        self.assertTrue(checks["contexto executável AC-032"])
+        self.assertFalse(checks["decisão associada ao AC"])
+
+    def test_positive_synthetic_executable_contract_is_accepted(self) -> None:
+        sample = """
+        const contracts = {
+          "AC-032": (context) => {
+            if (context.material) return "negócio arquitetura processo transversal risco alto divergência material";
+            return "nenhuma consulta externa; repositório prossegue";
+          },
+          "AC-033": (context) => {
+            if (context.irreversible) return "publicação histórico schema dados acesso segredo remove: para antes da ação; gate humano, modelo não substitui";
+            if (context.failed) return "três tentativas falhas; quarta tentativa recusada; devolve decisão ao orquestrador humano";
+          },
+          "AC-034": (context) => {
+            if (context.offline) return "serviço externo indisponível; classificação preflight contexto revisão contrato de entrega; apenas escalonamento pendente";
+          },
+        };
+        """
+        clause_groups = {
+            "AC-032": ({
+                "gatilhos materiais": r"neg[oó]cio.{0,100}arquitetura.{0,120}processo transversal.{0,120}risco alto.{0,120}diverg[eê]ncia material",
+                "sem consulta externa": r"nenhuma consulta externa|(?:n[aã]o|sem).{0,100}escalon",
+                "prossegue offline": r"reposit[oó]rio.{0,160}prossegu",
+            },),
+            "AC-033": ({
+                "ações irreversíveis": r"publica.{0,100}hist[oó]rico.{0,100}schema.{0,100}dados.{0,100}acesso.{0,100}segredo.{0,100}remove",
+                "para antes": r"para.{0,100}antes.{0,100}(?:agir|a[cç][aã]o)",
+                "gate humano": r"gate humano.{0,140}modelo.{0,120}n[aã]o.{0,100}substitui",
+            }, {
+                "três falhas": r"tr[eê]s tentativas.{0,120}falhas",
+                "quarta não inicia": r"quarta tentativa.{0,160}(?:para|recus|devolve)",
+                "retorno ao orquestrador": r"devolve.{0,100}decis[aã]o.{0,120}(?:orquestra|humano)",
+            }),
+            "AC-034": ({
+                "serviço externo indisponível": r"servi[cç]o externo.{0,120}indispon[ií]vel",
+                "fluxo local completo": r"classifica[cç][aã]o.{0,100}preflight.{0,120}contexto.{0,100}revis[aã]o.{0,120}contrato de entrega",
+                "só escalonamento pendente": r"apenas.{0,120}escalonamento.{0,120}pendente",
+            },),
+        }
+        for ac, groups in clause_groups.items():
+            for clauses in groups:
+                with self.subTest(ac=ac, clauses=tuple(clauses)):
+                    self.assertTrue(all(result for _, result in executable_checks(ac, clauses, sample=sample)))
 
 
 if __name__ == "__main__":
