@@ -1,0 +1,234 @@
+"""SPEC-0002/T002: contratos de sessão, rodada e ponteiros (AC-014–AC-026).
+
+Esta suíte materializa somente os oráculos TDD. Os mecanismos responsáveis
+continuam ausentes nesta tarefa, portanto o RED é o resultado normativo.
+"""
+
+from __future__ import annotations
+
+import re
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SESSION_GUARDIAN = Path("deco/skills/session-guardian/SKILL.md")
+REVIEW_REQUEST = Path("deco/templates/review-request.md")
+
+
+def normative_section(content: str, ac: str) -> str:
+    """Isola um AC sem aceitar texto de seções vizinhas como evidência."""
+    heading = re.search(
+        rf"(?m)^#{{2,6}}\s+{re.escape(ac)}(?:\b|[\s:—-]).*$",
+        content,
+    )
+    if heading is None:
+        return ""
+    remainder = content[heading.end():]
+    next_heading = re.search(r"(?m)^#{1,6}\s+", remainder)
+    return remainder[:next_heading.start()] if next_heading else remainder
+
+
+def has_decision_structure(section: str) -> bool:
+    bdd = all(re.search(rf"(?im)^\s*{term}\b", section) for term in ("Given", "When", "Then"))
+    labeled = (
+        re.search(r"(?im)^\s*[-*]\s*\*\*Condi[cç][aã]o\*\*\s*:\s*\S", section)
+        and re.search(r"(?im)^\s*[-*]\s*\*\*(?:A[cç][aã]o|Resultado)\*\*\s*:\s*\S", section)
+    )
+    table = re.search(
+        r"(?im)^\s*\|\s*Condi[cç][aã]o\s*\|\s*(?:A[cç][aã]o|Resultado)\s*\|",
+        section,
+    )
+    return bool(bdd or labeled or table)
+
+
+def contract_checks(
+    ac: str,
+    path: Path,
+    clauses: dict[str, str],
+    exact_tokens: tuple[str, ...] = (),
+    *,
+    sample: str | None = None,
+) -> list[tuple[str, bool]]:
+    artifact = ROOT / path
+    exists = artifact.is_file() if sample is None else True
+    content = artifact.read_text(encoding="utf-8") if exists and sample is None else sample or ""
+    section = normative_section(content, ac)
+    checks = [
+        ("artefato presente", exists),
+        (f"seção normativa {ac}", bool(section)),
+        ("estrutura de decisão condição → resultado", has_decision_structure(section)),
+    ]
+    checks.extend(
+        (obligation, bool(re.search(expression, section, re.IGNORECASE | re.DOTALL)))
+        for obligation, expression in clauses.items()
+    )
+    checks.extend((f"token exato {token}", token in section) for token in exact_tokens)
+    return checks
+
+
+class GovernanceRoundsTest(unittest.TestCase):
+    def assert_contract(
+        self,
+        ac: str,
+        path: Path,
+        clauses: dict[str, str],
+        exact_tokens: tuple[str, ...] = (),
+    ) -> None:
+        for obligation, satisfied in contract_checks(ac, path, clauses, exact_tokens):
+            with self.subTest(ac=ac, obligation=obligation):
+                self.assertTrue(satisfied, f"{ac}: {path} não satisfaz: {obligation}")
+
+    def test_ac014_single_active_context_is_validated_offline(self) -> None:
+        self.assert_contract("AC-014", SESSION_GUARDIAN, {
+            "um contexto por ponteiro": r"SESSION_CURRENT.{0,160}exatamente um.{0,120}contexto",
+            "estado observado": r"projeto.{0,100}branch.{0,100}HEAD.{0,160}estado observado",
+            "cinco campos e escopo": r"cinco campos.{0,160}(?:superad|escopo)",
+            "funciona offline": r"sem (?:acesso (?:à|a) )?(?:rede|servi[cç]o externo)",
+        }, exact_tokens=("SESSION_CURRENT", "SG-VÁLIDO"))
+
+    def test_ac014_ambiguous_active_context_blocks(self) -> None:
+        self.assert_contract("AC-014", SESSION_GUARDIAN, {
+            "dois ativos bloqueiam": r"dois contextos.{0,120}ATUAL.{0,160}SG-BLOQUEADO",
+            "sem escolha silenciosa": r"nenhum contexto.{0,100}escolhid.{0,80}silencios",
+        }, exact_tokens=("ATUAL", "SG-BLOQUEADO"))
+
+    def test_ac014_unexplained_identity_divergence_blocks(self) -> None:
+        self.assert_contract("AC-014", SESSION_GUARDIAN, {
+            "identidade divergente": r"(?:projeto|branch|HEAD).{0,160}diverg.{0,160}SG-BLOQUEADO",
+            "reconciliação obrigatória": r"continuidade.{0,120}recusad.{0,120}reconcili",
+        }, exact_tokens=("SG-BLOQUEADO",))
+
+    def test_ac015_transcript_is_never_canonical(self) -> None:
+        self.assert_contract("AC-015", SESSION_GUARDIAN, {
+            "transcript ou resumo recusado": r"transcript.{0,120}resumo autom[aá]tico.{0,180}n[aã]o.{0,80}fonte can[oô]nica",
+            "fonte única bloqueia": r"[uú]nica fonte.{0,160}SG-BLOQUEADO",
+            "arquivo curado obrigatório": r"arquivo curado.{0,120}SESSION_CURRENT",
+        }, exact_tokens=("SESSION_CURRENT", "SG-BLOQUEADO"))
+
+    def test_ac016_material_change_opens_new_round(self) -> None:
+        self.assert_contract("AC-016", SESSION_GUARDIAN, {
+            "três gatilhos materiais": r"decis[aã]o.{0,100}escopo.{0,140}classe de risco",
+            "nova rodada antes de seguir": r"MUDANÇA MATERIAL.{0,180}SG-BLOQUEADO.{0,220}nova rodada.{0,140}CURRENT",
+            "histórico não reescrito": r"contexto anterior.{0,140}n[aã]o.{0,80}reescrit",
+        }, exact_tokens=("MUDANÇA MATERIAL", "SG-BLOQUEADO", "CURRENT"))
+
+    def test_ac016_reversible_metadata_fix_is_conditional(self) -> None:
+        self.assert_contract("AC-016", SESSION_GUARDIAN, {
+            "correção não material": r"metadado.{0,100}evid[eê]ncia.{0,100}proveni[eê]ncia.{0,180}sem alterar.{0,180}(?:decis[aã]o|escopo|risco)",
+            "correção reversível": r"SG-CONDICIONAL.{0,180}revers[ií]vel",
+            "ponteiro preservado e recheck": r"SESSION_CURRENT.{0,160}[uú]nico contexto.{0,180}verifica[cç][aã]o.{0,80}repetid",
+        }, exact_tokens=("SG-CONDICIONAL", "SESSION_CURRENT"))
+
+    def test_ac017_closure_preserves_superseded_context(self) -> None:
+        self.assert_contract("AC-017", SESSION_GUARDIAN, {
+            "cinco campos com porquê": r"cinco campos.{0,180}porqu[eê].{0,100}decis[aã]o",
+            "um ativo": r"exatamente um contexto.{0,100}ativ",
+            "anterior superado e imutável": r"anterior.{0,120}superad.{0,160}sem.{0,80}reescrit",
+            "snapshot e ponteiro atômicos": r"snapshot.{0,120}SESSION_CURRENT.{0,160}(?:conjunta|at[oô]mic)",
+        }, exact_tokens=("SESSION_CURRENT",))
+
+    def test_ac018_unverified_state_blocks_closure(self) -> None:
+        self.assert_contract("AC-018", SESSION_GUARDIAN, {
+            "estado não observado": r"branch.{0,80}HEAD.{0,80}stage.{0,80}worktree.{0,140}sem observa[cç][aã]o",
+            "bloqueio até observação": r"SG-BLOQUEADO.{0,180}impedid.{0,180}observad.{0,100}registrad",
+        }, exact_tokens=("SG-BLOQUEADO",))
+
+    def test_ac018_decision_without_reason_is_rejected(self) -> None:
+        self.assert_contract("AC-018", SESSION_GUARDIAN, {
+            "decisão sem motivo": r"decis[oõ]es.{0,140}apenas.{0,100}decidid",
+            "porquê obrigatório": r"recusad.{0,160}porqu[eê].{0,120}obrigat[oó]ri",
+        })
+
+    def test_ac018_context_loss_cannot_auto_resume(self) -> None:
+        self.assert_contract("AC-018", SESSION_GUARDIAN, {
+            "perda impede continuidade": r"compress[aã]o.{0,100}perda de contexto.{0,180}SG-BLOQUEADO",
+            "handoff estruturado": r"retomada autom[aá]tica.{0,160}n[aã]o.{0,120}handoff estruturado",
+        }, exact_tokens=("SG-BLOQUEADO",))
+
+    def test_ac018_third_compaction_starts_new_session(self) -> None:
+        self.assert_contract("AC-018", SESSION_GUARDIAN, {
+            "terceira compactação": r"duas compacta[cç][oõ]es.{0,160}terceira.{0,160}SG-CONDICIONAL",
+            "nova sessão e recheck": r"nova sess[aã]o.{0,120}handoff estruturado.{0,160}verifica[cç][aã]o.{0,80}repetid",
+        }, exact_tokens=("SG-CONDICIONAL",))
+
+    def test_ac019_guardians_and_handoff_are_distinct(self) -> None:
+        self.assert_contract("AC-019", SESSION_GUARDIAN, {
+            "vereditos SG": r"SG-VÁLIDO.{0,100}SG-CONDICIONAL.{0,100}SG-BLOQUEADO",
+            "vereditos GG": r"reposit[oó]rio.{0,140}prefixo GG",
+            "handoff administra pacote": r"review-handoff.{0,160}Review Request.{0,100}Review Verdict.{0,100}Correction Report.{0,100}rodada",
+            "sem substituição": r"nenhum.{0,140}substitui.{0,140}demais",
+        }, exact_tokens=("SG-VÁLIDO", "SG-CONDICIONAL", "SG-BLOQUEADO"))
+
+    def test_ac020_review_unit_is_one_consolidated_package(self) -> None:
+        self.assert_contract("AC-020", REVIEW_REQUEST, {
+            "pacote em vez de prompt": r"tr[eê]s prompts.{0,180}uma [uú]nica unidade",
+            "um pedido consolidado": r"exatamente um.{0,100}(?:Review Request|pedido de revis[aã]o).{0,100}consolidad",
+            "sem revisão por prompt": r"n[aã]o.{0,120}tr[eê]s revis[oõ]es.{0,120}prompt",
+        })
+
+    def test_ac021_request_has_fields_provenance_and_no_transcript(self) -> None:
+        self.assert_contract("AC-021", REVIEW_REQUEST, {
+            "estado e diff": r"unidade.{0,80}risco.{0,80}justificativa.{0,100}branch.{0,80}HEAD.{0,100}base.{0,80}escopo do diff",
+            "conteúdo do pacote": r"arquivos.{0,80}testes.{0,80}decis[oõ]es.{0,80}d[uú]vidas.{0,80}fontes.{0,80}restri[cç][oõ]es",
+            "proveniência do implementador": r"harness.{0,80}modelo.{0,80}effort.{0,80}session ID.{0,120}implementador",
+            "sem histórico de conversa": r"(?:nenhum|sem).{0,120}(?:hist[oó]rico de conversa|transcript)",
+        })
+
+    def test_ac022_verdict_is_separate_and_signed(self) -> None:
+        self.assert_contract("AC-022", REVIEW_REQUEST, {
+            "verdict separado": r"Review Verdict.{0,180}(?:separad|distint).{0,140}Review Request",
+            "proveniência do revisor": r"harness.{0,80}modelo.{0,80}effort.{0,80}session ID.{0,120}revisor",
+            "achados e decisão": r"evid[eê]ncias.{0,100}P0.{0,60}P1.{0,60}P2.{0,60}P3.{0,100}veredito.{0,80}condi[cç][oõ]es.{0,80}gate",
+        }, exact_tokens=("Review Request", "Review Verdict"))
+
+    def test_ac022_same_session_cannot_approve(self) -> None:
+        self.assert_contract("AC-022", REVIEW_REQUEST, {
+            "mesma sessão bloqueia": r"mesmo session ID.{0,180}aprova[cç][aã]o.{0,120}bloquead",
+        }, exact_tokens=("session ID",))
+
+    def test_ac023_corrections_are_batched_in_same_round(self) -> None:
+        self.assert_contract("AC-023", REVIEW_REQUEST, {
+            "correções em lote": r"corre[cç][oõ]es.{0,100}(?:em lote|lote)",
+            "report na mesma rodada": r"Correction Report.{0,160}mesma rodada",
+            "aplicado e não aplicado": r"achados tratados.{0,120}corre[cç][oõ]es aplicadas.{0,160}n[aã]o aplicados.{0,100}justificativa",
+            "mesmo revisor uma vez": r"mesmo revisor.{0,140}(?:uma [uú]nica vez|uma vez)",
+            "sem revisão por correção": r"nenhuma revis[aã]o.{0,140}cada corre[cç][aã]o",
+        }, exact_tokens=("Correction Report",))
+
+    def test_ac024_current_rejects_multiple_active_rounds(self) -> None:
+        self.assert_contract("AC-024", REVIEW_REQUEST, {
+            "ambiguidade rejeitada": r"CURRENT.{0,140}mais de uma rodada ativa.{0,180}rejeitad",
+            "sem escolha silenciosa": r"nenhuma rodada.{0,100}escolhid.{0,80}silencios",
+            "antes do parecer": r"ambiguidade.{0,120}antes.{0,100}parecer",
+        }, exact_tokens=("CURRENT",))
+
+    def test_ac025_completed_round_is_immutable(self) -> None:
+        self.assert_contract("AC-025", REVIEW_REQUEST, {
+            "aprovada ou reprovada": r"veredito.{0,100}aprovad.{0,100}reprovad",
+            "alteração recusada": r"altera[cç][aã]o.{0,120}recusad",
+            "revisão adicional em nova rodada": r"revis[aã]o adicional.{0,140}rodada nova",
+        })
+
+    def test_ac026_material_change_repoints_current(self) -> None:
+        self.assert_contract("AC-026", REVIEW_REQUEST, {
+            "gatilhos materiais": r"decis[aã]o.{0,100}escopo.{0,140}classe de risco",
+            "nova rodada e ponteiro": r"MUDANÇA MATERIAL.{0,160}nova rodada.{0,160}CURRENT",
+            "anterior encerrada sem rewrite": r"rodada anterior.{0,140}encerrad.{0,140}sem.{0,80}reescrit",
+        }, exact_tokens=("MUDANÇA MATERIAL", "CURRENT"))
+
+    def test_negative_tokens_without_decision_are_rejected(self) -> None:
+        shallow = "## AC-024\nCURRENT e rodada ativa.\n"
+        checks = dict(contract_checks("AC-024", REVIEW_REQUEST, {}, exact_tokens=("CURRENT",), sample=shallow))
+        self.assertTrue(checks["token exato CURRENT"])
+        self.assertFalse(checks["estrutura de decisão condição → resultado"])
+
+    def test_negative_lowercase_session_verdict_is_rejected(self) -> None:
+        sample = "## AC-014\n- **Condição**: sessão aberta\n- **Resultado**: sg-válido\n"
+        checks = dict(contract_checks("AC-014", SESSION_GUARDIAN, {}, exact_tokens=("SG-VÁLIDO",), sample=sample))
+        self.assertTrue(checks["estrutura de decisão condição → resultado"])
+        self.assertFalse(checks["token exato SG-VÁLIDO"])
+
+
+if __name__ == "__main__":
+    unittest.main()
