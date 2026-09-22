@@ -12,19 +12,20 @@
 | ClickUp Task | |
 | Milestones | |
 | Definition Gate | Passed |
-| Plan Gate | Pending |
+| Plan Gate | Passed |
 | Delivery Gate | Pending |
 | Review state | APROVADO |
 | Evidence Contract | 1 |
 | Interface para pessoas | Não — a governança é processo e não cria superfície própria; cockpit e Consulta SDD pertencem à SPEC-0001 e são consumidos como interface declarada |
-| Atualizada em | 2026-09-19 |
+| Atualizada em | 2026-09-21 |
 
 > **Decisão da rodada documental, Definition Gate aprovado.** A separação entre
 > a ponte Notion ↔ repositório e a governança transversal foi proposta no handoff
 > anterior, decidida e executada documentalmente nesta sessão de continuação. A
 > decisão operacional é evidenciada pelo pacote atual e pela revisão independente,
 > não pelo handoff anterior. Ambas as specs estão `Defined`, com Definition Gate
-> `Passed` e Plan Gate e Delivery Gate `Pending`.
+> `Passed`, Plan Gate `Passed` por decisão humana de Deco em 21/09/2026 e
+> Delivery Gate `Pending`.
 >
 > **Migração documental executada.** A recomposição da ponte e a retirada da
 > governança transversal da SPEC-0001 foram concluídas; esta spec tornou-se a
@@ -1261,6 +1262,37 @@ Feature: Fechamento formal do Git Guardian
 
 ### 8. Plano técnico
 
+#### Plano integrado do Plan Gate
+
+Esta spec é a espinha transversal do plano conjunto com a SPEC-0001. A ordem
+obrigatória é: Git Guardian; mecanismos transversais; mecanismos locais da
+ponte; integração; validadores e fixtures; empacotamento da Camada Potestatem;
+instalação em consumidor; piloto Tempus Mind Map; reconciliação; Delivery Gate.
+
+A nomenclatura aprovada em 21/09/2026 é aplicada somente ao conteúdo novo:
+**Potestatem SDD** é o método organizacional, **Specsfy** é a base upstream e
+**Camada Potestatem** é a camada própria. `deco/`, `deco/v0.2` e o nome do repo
+permanecem identificadores técnicos. Não há rename nem substituição global.
+
+O censo atual não localizou mecanismo executável do Git Guardian. O Plan Gate
+propõe resolver DEC-006 atribuindo à SPEC-0002 a primeira materialização futura,
+antes dos demais mecanismos. Isso define dono e ordem, mas não afirma que o
+mecanismo exista hoje e permanece sujeito à revisão independente.
+
+Os quatro perfis de FR-006 continuam sendo **perfis de risco de revisão**. A
+política organizacional de perfis técnicos por família de stack não cria um
+catálogo universal nesta v0.2; esse catálogo fica para spec posterior. O piloto
+pode declarar contrato Laravel/PostgreSQL local sem acoplar o Potestatem SDD a
+essa stack.
+
+**Decisão humana do Plan Gate (21/09/2026):** o runner TDD canônico da v0.2
+é `python3 -B -m unittest`, integrado à descoberta da raiz em
+`tests/test_deco_*.py`; os cenários BDD da camada ficam em
+`tests/features/deco_*.feature` e são executados também pela regressão da
+raiz. A validação de entrega deve provar execução real das suítes da camada,
+com teste negativo para ausência, exclusão ou não execução. Nenhum
+`deco/tests/**/*.test.mjs` é adotado por este plano.
+
 #### Contexto existente
 
 A organização já possui as decisões de método (`G-01` a `G-17`), a peça 1 do
@@ -1437,8 +1469,9 @@ repositório e sobre o estado observado do próprio repositório.
 
 ### 11. Estratégia TDD
 
-Estratégia de verificação em nível de intenção. Os artefatos executáveis, seus
-caminhos e sua linguagem são **proposta a confirmar no Plan Gate**.
+Estratégia de verificação em nível de intenção. O runner e os caminhos dos
+artefatos executáveis foram confirmados pela decisão humana deste Plan Gate
+(DEC-009); os testes ainda não foram implementados.
 
 - **Unidade**: leitura de cada contrato materializado — presença das cláusulas
   obrigatórias, dos estados admitidos, dos vereditos prefixados e das vedações.
@@ -1449,10 +1482,12 @@ caminhos e sua linguagem são **proposta a confirmar no Plan Gate**.
 - **BDD/aceite**: a seção 6 contém **trinta e oito identificadores AC** e
   **cinquenta e seis blocos `Scenario`**. Antes da C1 eram trinta e quatro IDs AC
   e quarenta e um blocos; ao fim da C1 eram trinta e oito IDs e cinquenta e quatro blocos;
-  as duas contagens nunca são tratadas como equivalentes. Nenhum arquivo de
-  cenário executável é criado; o Gherkin permanece documental.
-- **Runner**: proposta — o runner já existente na raiz do monorepo, para não
-  introduzir stack nova. Confirmação no Plan Gate.
+  as duas contagens nunca são tratadas como equivalentes. O Gherkin desta spec
+  permanece fonte normativa; a projeção executável planejada vive em
+  `tests/features/deco_*.feature` e participa da regressão da raiz.
+- **Runner TDD confirmado**: `python3 -B -m unittest`, com casos
+  `tests/test_deco_*.py` descobertos na raiz. O Delivery Gate exige prova de
+  execução de todos os casos da camada, não só saída global verde.
 - **E2E**: não aplicável — não há aplicação a percorrer.
 - **Verificação manual**: inevitável para o que só se observa em uso real — a
   qualidade de um parecer, a adequação de uma classificação de risco e o aceite
@@ -1587,17 +1622,17 @@ aceito não foi contornado para satisfazer esse defeito do validador.
 
 #### Gate do Ato II — Plano
 
-- **Resultado**: Pending
+- **Resultado**: Passed em 21/09/2026, por decisão humana de Deco: aprovado com as condições registradas.
 - **Comando equivalente neste monorepo**:
   `node skills/specsfy-05-tasks/scripts/validate_tasks.mjs deco/specs/0002-governanca-sdd/spec.md --allow-draft`
-- **Achados**: Pending. Validador do Plan Gate; rodá-lo agora é diagnóstico, não
-  critério. Os achados terão **duas causas distintas, que não devem ser
-  confundidas**: **gap esperado antes do Plan Gate** — ausência de tarefas e,
-  em consequência, de predecessores e de cobertura por tarefa, que desaparece
-  quando o plano for produzido; e **lacuna de tooling do monorepo** — a busca por
-  `verify_evidence.mjs` em `<raiz>/.agents/skills/`, caminho que só existe em
-  projeto consumidor e que `AGENTS.md:39-40` reserva à skill local de
-  documentação, que **não** desaparece com o plano pronto.
+- **Achados**: a reconferência independente recomendou aprovação após conferir
+  32/32 tarefas, tabela, grafo, cortes e correções. O validador de tarefas ainda
+  retorna o erro de caminho `verify_evidence.mjs` próprio desta raiz do monorepo;
+  não é evidência verde nem condição declarada resolvida. O diagnóstico anterior
+  à geração das tarefas fica preservado no histórico Git.
+- **Evidência FR-011 e condições**:
+  [ato de aprovação do Plan Gate](reviews/plan-gate-2026-09-21/plan-gate-approval.md).
+  `Delivery Gate` permanece `Pending`; nenhuma tarefa foi implementada.
 
 #### Gate do Ato III — Entrega
 
@@ -1638,42 +1673,159 @@ comportamento exigido do produto.
 
 ### 14. Tarefas
 
-**Nenhuma tarefa é definida nesta fase, deliberadamente.**
+Todas as tarefas permanecem abertas. `GREEN` abaixo é evidência futura esperada,
+não resultado observado nesta missão.
 
-O Definition Gate avalia **definição**. Tarefas e ordem de execução detalhada são
-matéria do **Plan Gate** e serão geradas pelo estágio próprio do Specsfy
-(`skills/specsfy-05-tasks`) depois que o Definition Gate for aprovado por
-instância distinta, conforme FR-003. Nenhuma tarefa substituta foi criada para
-satisfazer `validate_tasks.mjs`: esse validador pertence ao Plan Gate e o seu
-resultado nesta fase é diagnóstico, não critério.
-
-O que esta seção registra, e que o Plan Gate deverá consumir:
-
-- os artefatos obrigatórios e o conteúdo mínimo de cada um estão na seção 8;
-- a correspondência cenário → evidência está nas seções 11 e 12;
-- caminhos físicos, formato, atomicidade e validação executável dos contratos,
-  skills e verificadores são decisões do plano;
-- a migração documental já executada é baseline do plano, não tarefa futura;
-- o Plan Gate deve prever verificação executável que detecte quebra dos seis
-  nomes de interface consumidos da SPEC-0001, sem fixar caminhos nesta fase;
-- a resolução da dependência do Git Guardian (DEC-006) precede o plano.
+- [ ] T001 [TEST] [TDD] Criar testes de contratos transversais em tests/test_deco_governance_contracts.py — Refs: US-001, US-002, US-003, US-004, FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012, NFR-001, NFR-002, NFR-003, NFR-004, NFR-005, AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-008, AC-009, AC-010, AC-011, AC-012, AC-013 — Depends: none
+  - [ ] **PREP**: derivar matriz, roteador, separação de papéis e Git Guardian do BDD aprovado; projetar BDD executável em `tests/features/deco_governance_contracts.feature`.
+  - [ ] **EXECUTE**: materializar somente os testes; observar RED por contratos ausentes.
+  - [ ] **VERIFY**: executar o runner focal e confirmar falha comportamental, não ambiental.
+  - [ ] **VISUAL**: não aplicável; artefato sem interface visual.
+  - [ ] **EVIDENCE**: registrar comando, exit e casos RED na seção 11.
+  - [ ] **IMPROVE**: reduzir duplicação das fixtures sem enfraquecer oráculos.
+- [ ] T002 [P] [TEST] [TDD] Criar testes de sessão, rodada e ponteiros em tests/test_deco_governance_rounds.py — Refs: US-001, US-002, US-003, US-004, FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012, NFR-001, NFR-002, NFR-003, NFR-004, NFR-005, AC-014, AC-015, AC-016, AC-017, AC-018, AC-019, AC-020, AC-021, AC-022, AC-023, AC-024, AC-025, AC-026 — Depends: none
+  - [ ] **PREP**: derivar estados, CURRENT, SESSION_CURRENT e imutabilidade do BDD; projetar BDD executável em `tests/features/deco_governance_rounds.feature`.
+  - [ ] **EXECUTE**: materializar somente os testes; observar RED pelos mecanismos ausentes.
+  - [ ] **VERIFY**: executar casos de ambiguidade, mudança material e rodada histórica.
+  - [ ] **VISUAL**: não aplicável; artefato sem interface visual.
+  - [ ] **EVIDENCE**: registrar comandos e falhas RED rastreáveis.
+  - [ ] **IMPROVE**: consolidar builders de rodada sem ocultar estados.
+- [ ] T003 [P] [TEST] [TDD] Criar testes de entrega, evidência e escalonamento em tests/test_deco_governance_delivery.py — Refs: US-001, US-002, US-003, US-004, FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012, NFR-001, NFR-002, NFR-003, NFR-004, NFR-005, AC-027, AC-028, AC-029, AC-030, AC-031, AC-032, AC-033, AC-034, AC-035, AC-036, AC-037, AC-038 — Depends: none
+  - [ ] **PREP**: derivar Contrato de Entrega, três estados e gates do BDD; projetar BDD executável em `tests/features/deco_governance_delivery.feature`.
+  - [ ] **EXECUTE**: materializar somente os testes; observar RED por contratos ausentes.
+  - [ ] **VERIFY**: executar regressões, escalonamento e proveniência negativa.
+  - [ ] **VISUAL**: não aplicável; artefato sem interface visual.
+  - [ ] **EVIDENCE**: registrar comandos e casos RED na matriz.
+  - [ ] **IMPROVE**: separar oráculos de entrega dos oráculos de revisão.
+- [ ] T004 [CODE] Materializar Git Guardian em deco/skills/git-guardian/SKILL.md — Refs: FR-004, AC-011, AC-012, AC-013, AC-038 — Depends: T001, T002, T003
+  - [ ] **PREP**: confirmar as dezesseis dimensões e a regra fail-closed.
+  - [ ] **EXECUTE**: implementar três vereditos GG sem operação destrutiva automática.
+  - [ ] **VERIFY**: obter GREEN nos casos de branch, HEAD, remote, stage e origem desconhecida.
+  - [ ] **VISUAL**: não aplicável; skill sem interface visual.
+  - [ ] **EVIDENCE**: registrar saída estruturada e testes negativos.
+  - [ ] **IMPROVE**: remover duplicação sem fundir Git e Session Guardian.
+- [ ] T005 [P] [CODE] Materializar Session Guardian em deco/skills/session-guardian/SKILL.md — Refs: FR-005, AC-014, AC-015, AC-016, AC-017, AC-018, AC-019 — Depends: T001, T002, T003
+  - [ ] **PREP**: fixar abertura, continuidade e fechamento sem transcript como fonte.
+  - [ ] **EXECUTE**: implementar SG e validação lógica de SESSION_CURRENT.
+  - [ ] **VERIFY**: obter GREEN em ausência, ambiguidade, compressão e mudança material.
+  - [ ] **VISUAL**: não aplicável; skill sem interface visual.
+  - [ ] **EVIDENCE**: registrar vereditos SG e fixtures correspondentes.
+  - [ ] **IMPROVE**: manter fronteira explícita com review-handoff.
+- [ ] T006 [P] [CODE] Materializar contratos de repasse em deco/templates/review-request.md — Refs: FR-007, FR-008, AC-020, AC-021, AC-022, AC-023, AC-024, AC-025, AC-026 — Depends: T001, T002, T003
+  - [ ] **PREP**: fixar campos de Review Request, Verdict, Correction Report e CURRENT.
+  - [ ] **EXECUTE**: criar templates e regras de rodada imutável.
+  - [ ] **VERIFY**: obter GREEN em campos ausentes, HEAD divergente e nova rodada.
+  - [ ] **VISUAL**: não aplicável; templates Markdown sem interface gráfica.
+  - [ ] **EVIDENCE**: registrar schemas e fixtures válidas/inválidas.
+  - [ ] **IMPROVE**: eliminar campos duplicados entre os três contratos.
+- [ ] T007 [CODE] Implementar review-router em deco/skills/review-router/SKILL.md — Refs: FR-001, FR-002, FR-003, FR-006, AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-008, AC-009, AC-010 — Depends: T004, T005, T006
+  - [ ] **PREP**: mapear quatro riscos, onze gatilhos e quatro perfis de risco.
+  - [ ] **EXECUTE**: compor gate e perfis sem criar combinações de skills.
+  - [ ] **VERIFY**: obter GREEN em roteamento, bloqueio e proveniência ausente.
+  - [ ] **VISUAL**: não aplicável; skill sem interface visual.
+  - [ ] **EVIDENCE**: registrar matriz de decisão e casos limítrofes.
+  - [ ] **IMPROVE**: simplificar regras mantendo exemplos auditáveis.
+- [ ] T008 [P] [CODE] Implementar review-definition em deco/skills/review-definition/SKILL.md — Refs: FR-006, AC-004, AC-005, AC-020 — Depends: T007
+  - [ ] **PREP**: fixar unidade coerente e critérios do Definition Gate.
+  - [ ] **EXECUTE**: implementar revisão de problema, requisitos, escopo e decisões.
+  - [ ] **VERIFY**: obter GREEN em achados priorizados e não autoaprovação.
+  - [ ] **VISUAL**: não aplicável; skill sem interface visual.
+  - [ ] **EVIDENCE**: registrar Review Verdict de fixture.
+  - [ ] **IMPROVE**: reduzir repetição com o roteador.
+- [ ] T009 [P] [CODE] Implementar review-plan em deco/skills/review-plan/SKILL.md — Refs: FR-006, AC-004, AC-005, AC-020 — Depends: T007
+  - [ ] **PREP**: fixar arquitetura, tarefas, ordem, riscos, rollback e testes previstos.
+  - [ ] **EXECUTE**: implementar revisão do Plan Gate sem promovê-lo automaticamente.
+  - [ ] **VERIFY**: obter GREEN em dependências cíclicas, gaps e escopo adiado.
+  - [ ] **VISUAL**: não aplicável; skill sem interface visual.
+  - [ ] **EVIDENCE**: registrar verdicts aprovando e solicitando correções.
+  - [ ] **IMPROVE**: compartilhar somente contratos comuns com outras reviews.
+- [ ] T010 [P] [CODE] Implementar review-delivery em deco/skills/review-delivery/SKILL.md — Refs: FR-006, FR-009, FR-010, FR-011, AC-027, AC-028, AC-029, AC-030, AC-031 — Depends: T007
+  - [ ] **PREP**: fixar diff, testes, evidências, regressões e aderência.
+  - [ ] **EXECUTE**: implementar revisão dos três estados de entrega.
+  - [ ] **VERIFY**: obter GREEN em regressão e evidência material ausente.
+  - [ ] **VISUAL**: não aplicável; skill sem interface visual.
+  - [ ] **EVIDENCE**: registrar verdicts e regressões de fixture.
+  - [ ] **IMPROVE**: manter PRONTO, ENTREGUE e ACEITO não colapsáveis.
+- [ ] T011 [CODE] Implementar review-handoff em deco/skills/review-handoff/SKILL.md — Refs: FR-007, FR-008, FR-011, AC-020, AC-021, AC-022, AC-023, AC-024, AC-025, AC-026, AC-035, AC-036, AC-037 — Depends: T006, T008, T009, T010
+  - [ ] **PREP**: definir criação, validação, correção e encerramento de rodada.
+  - [ ] **EXECUTE**: implementar ponteiros e pacotes sem reescrever histórico.
+  - [ ] **VERIFY**: obter GREEN em CURRENT quebrado, HEAD divergente e nova rodada.
+  - [ ] **VISUAL**: não aplicável; skill sem interface visual.
+  - [ ] **EVIDENCE**: registrar fixtures e provenance tokens.
+  - [ ] **IMPROVE**: separar CURRENT de SESSION_CURRENT em código e mensagens.
+- [ ] T012 [CODE] Materializar Contrato de Entrega em deco/rules/delivery-contract.md — Refs: FR-009, FR-010, FR-011, AC-027, AC-028, AC-029, AC-030, AC-031 — Depends: T003, T011
+  - [ ] **PREP**: fixar treze campos, estados e regressões permitidas.
+  - [ ] **EXECUTE**: criar regra e template em deco/templates/delivery-contract.md.
+  - [ ] **VERIFY**: obter GREEN em alcance, aceite, revogação e rollback.
+  - [ ] **VISUAL**: não aplicável; contrato Markdown sem interface gráfica.
+  - [ ] **EVIDENCE**: registrar exemplos válidos e inválidos.
+  - [ ] **IMPROVE**: generalizar precedente sem transportar domínio alheio.
+- [ ] T013 [CODE] Integrar validador, fixtures e regressão da raiz em deco/scripts/validate-governance.mjs e tests/test_deco_regression_contract.py — Refs: FR-001, FR-003, FR-004, FR-005, FR-007, FR-008, FR-011, FR-012, AC-032, AC-033, AC-034, AC-035, AC-036, AC-037, AC-038 — Depends: T004, T005, T006, T007, T008, T009, T010, T011, T012
+  - [ ] **PREP**: enumerar fixtures positivas/negativas em deco/fixtures/governance/; definir inventário esperado dos testes `test_deco_*.py` e `deco_*.feature`; reconciliar `tests/test_references.py` com fixtures negativas sem ocultar links reais quebrados; guardar o contexto desta rodada em `deco/specs/0002-governanca-sdd/reviews/plan-gate-2026-09-21/session-context.md`, nunca em `docs/sessoes/` na raiz do monorepo.
+  - [ ] **EXECUTE**: implementar códigos de saída determinísticos e contrato de regressão da raiz que verifica presença, descoberta e execução de todos os testes da Camada Potestatem.
+  - [ ] **VERIFY**: obter GREEN em fixtures e na regressão da raiz; simular ausência, exclusão e não execução de qualquer suíte da camada e exigir falha não zero em cada caso; exigir verdes `test_docs_has_exactly_the_user_and_develop_trees` e `test_all_documents_are_reachable_from_portal`.
+  - [ ] **VISUAL**: não aplicável; validador sem interface visual.
+  - [ ] **EVIDENCE**: registrar matriz fixture → requisito → resultado, IDs descobertos/executados e os três exits negativos; nenhuma suíte ignorada pode gerar verde.
+  - [ ] **IMPROVE**: reduzir acoplamento entre validadores focais.
+- [ ] T014 [CODE] Empacotar e instalar a Camada Potestatem por deco/scripts/install.mjs — Refs: FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, NFR-001, NFR-002, NFR-003, NFR-004, NFR-005 — Depends: T013
+  - [ ] **PREP**: atualizar deco/manifest.json e definir lock, dry-run, conflito e backup.
+  - [ ] **EXECUTE**: implementar install.mjs e deco/scripts/verify.mjs.
+  - [ ] **VERIFY**: obter GREEN em instalação limpa, idempotência, conflito e rollback.
+  - [ ] **VISUAL**: não aplicável; CLI sem interface visual nesta fatia.
+  - [ ] **EVIDENCE**: registrar árvore instalada, hashes e restauração verificada.
+  - [ ] **IMPROVE**: minimizar superfície instalada sem incluir deco/specs/.
+- [ ] T015 [OPS] Validar instalação isolada em deco/fixtures/consumer/valid/AGENTS.md — Refs: FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012, NFR-001, NFR-003, NFR-005 — Depends: T014
+  - [ ] **PREP**: criar consumidor sintético sem dados reais; esta execução é baseline transversal anterior à ponte, não evidência final de instalação.
+  - [ ] **EXECUTE**: executar dry-run, instalação, verificação e rollback.
+  - [ ] **VERIFY**: confirmar zero arquivo fora do manifest e runtime offline; a prova final depende da revalidação pós-integração em SPEC-0001/T110.
+  - [ ] **VISUAL**: não aplicável; validação operacional sem interface visual.
+  - [ ] **EVIDENCE**: registrar comandos, exits, hashes e diff da fixture.
+  - [ ] **IMPROVE**: reduzir passos manuais sem automatizar decisão humana.
+- [ ] T016 [DOC] Registrar contrato transversal do piloto em deco/pilots/tempus-mind-map/governance-acceptance.md — Refs: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012 — Depends: T015
+  - [ ] **PREP**: executar censo Git read-only do consumidor antes de fixar caminhos reais.
+  - [ ] **EXECUTE**: registrar stack local, branch própria, escopo máximo, exclusões e protocolo de cinco Consultas SDD completas ou sete dias, o que ocorrer depois.
+  - [ ] **VERIFY**: confirmar baseline LionCode preservada, projeto não crítico e nunca legado nem com cliente ativo; manter piloto aberto até sete dias e exatamente cinco consultas completas, sem usar atualização de cockpit como substituto.
+  - [ ] **VISUAL**: não aplicável; contrato documental sem interface gráfica.
+  - [ ] **EVIDENCE**: registrar branch, HEAD, footprint e critérios de aceite.
+  - [ ] **IMPROVE**: cortar acabamento antes de testes, isolamento, auditoria ou revisão.
+- [ ] T017 [DOC] Reconciliar piloto e preparar Delivery Gate em deco/pilots/tempus-mind-map/governance-evidence.md — Refs: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012, NFR-001, NFR-002, NFR-003, NFR-004, NFR-005 — Depends: T016
+  - [ ] **PREP**: coletar métricas, desvios, revisão, handoff e atualizações de cockpit por marco; exigir evidência local da SPEC-0001/T115.
+  - [ ] **EXECUTE**: classificar correções não materiais ou abrir nova rodada quando material.
+  - [ ] **VERIFY**: executar focais, `python3 -B -m unittest discover -s tests -p 'test_*.py'`, BDD da raiz e verificação do pacote após SPEC-0001/T110; conferir IDs esperados e executados da camada, negativa de ausência/exclusão/não execução e nenhuma falha mascarada antes de qualquer Delivery Gate verde.
+  - [ ] **VISUAL**: não aplicável; evidência documental sem interface própria.
+  - [ ] **EVIDENCE**: anexar comandos, exits, contagens, Contrato de Entrega, cinco consultas completas, janela mínima de sete dias e Review Verdict independente.
+  - [ ] **IMPROVE**: registrar somente problemas observados no piloto.
 
 ### 15. Ordem de execução
 
-Nesta fase, apenas a **sequência macro de gates**. O detalhamento — caminho
-crítico, paralelização e composição de MVP — é produzido no Plan Gate.
+1. `T001 || T002 || T003`: predecessores RED no `unittest` da raiz e BDD da
+   raiz; `T004` materializa Git Guardian depois deles, não antes.
+2. `T005 || T006`, `T007`, `T008 || T009 || T010`, `T011` e `T012`
+   materializam a governança transversal; `T013` integra seus testes à
+   regressão da raiz e prova os três casos de falso verde.
+3. `T014` empacota a base transversal; `T015` valida instalação sintética
+   inicial. Essa validação **não** é evidência final do pacote com a ponte.
+4. A SPEC-0001 executa `T101`–`T109`, integra a ponte em `T110` e
+   **revalida instalação, idempotência, conflitos e runtime offline após a
+   integração**. Sem esse GREEN posterior, nem piloto nem Delivery Gate.
+5. Após o censo read-only da SPEC-0001/T111, `T016` registra o contrato
+   transversal do piloto em `governance-acceptance.md`; SPEC-0001/T112–T113
+   possui `acceptance.md` local. A SPEC-0001/T114 mantém o piloto aberto
+   até **cinco consultas completas ou sete dias, o que ocorrer depois**.
+6. SPEC-0001/T115 reconcilia `evidence.md` local; `T017` possui
+   `governance-evidence.md` e só prepara o Delivery Gate após essa evidência,
+   regressão integral e revisão independente. O Plan Gate foi fechado por
+   decisão humana externa de Deco em 21/09/2026, não por esta autoria.
 
-1. **Definition Gate** — esta spec, revisada e aprovada por instância distinta de
-   quem a escreveu (FR-003). A revisão deve avaliar especialmente o que é
-   `INFERÊNCIA DE ARQUITETURA` no research: Session Guardian, Contrato de Entrega
-   transversal e vocabulário prefixado.
-2. **Rodada de migração — CUMPRIDA NESTA RODADA DOCUMENTAL** — a SPEC-0001 foi
-   recomposta, a duplicação transversal foi removida e as referências cruzadas
-   foram verificadas. RISK-001 foi encerrado.
-3. **Plan Gate** — geração de tarefas; decisão sobre estrutura física, formato e
-   validação executável; resolução da dependência do Git Guardian.
-4. **Delivery Gate** — materialização dos contratos, piloto medido contra `M-1` a
-   `M-7` e decisão sobre automação.
+**Caminho crítico:** `T001–T003 → T004 → T007 → T011 → T013 → T014 → T015 →
+SPEC-0001/T101–T109 → T110 [revalidação pós-ponte] → T111 → T016 →
+T112–T114 [≥7 dias e 5 consultas] → T115 → T017 → Delivery Gate`.
+
+**Cortes disjuntos:** mínimo pilotável = `T001`–`T016` (inclui
+`T013` e `T015`); necessário para Delivery Gate = `T017`; pós-piloto
+= nenhuma tarefa desta spec. Catálogo técnico universal, rename e automação
+Notion exigem trabalho posterior separado. Uma tarefa aparece em um único
+corte; nenhuma evidência anterior a `T110` valida a instalação final.
 
 ## Ato III — Entregar e validar
 
@@ -1843,6 +1995,18 @@ crítico, paralelização e composição de MVP — é produzido no Plan Gate.
   **Trade-off**: ganha-se um contrato transversal de treze campos aplicável a
   qualquer artefato; perde-se a concretude do original — o contrato genérico é
   mais abstrato e exige mais julgamento de quem o escreve.
+- **DEC-009 — runner TDD da v0.2 (decisão humana, 21/09/2026)**:
+  confirmar `python3 -B -m unittest` na raiz para todos os testes
+  `tests/test_deco_*.py`; cenários `tests/features/deco_*.feature` participam
+  da regressão BDD. O Delivery Gate requer prova de presença, descoberta e
+  execução de todas as suítes da Camada Potestatem, além de negativas para
+  ausência, exclusão e não execução. Não adotar `deco/tests/**/*.test.mjs`.
+  **Razão**: reutilizar o runner existente e impedir que a regressão da raiz
+  fique verde sem testar a camada (FR-012, AC-032–AC-038).
+  **Alternativa descartada**: harness Node paralelo sem integração à descoberta
+  da raiz, que produziria falso verde.
+  **Trade-off**: mantém um runner canônico e exige guarda adicional da matriz
+  de descoberta/execução antes do Delivery Gate.
 
 ### 18. Definition of Done
 
@@ -1858,7 +2022,11 @@ crítico, paralelização e composição de MVP — é produzido no Plan Gate.
 - [x] Rodada de migração concluída: conteúdo duplicado removido da SPEC-0001, sem
       referência cruzada quebrada, encerrando RISK-001 nesta rodada documental.
 - [ ] Dependência do Git Guardian resolvida: fonte canônica versionada localizada
-      e referenciada, **ou** spec própria aberta (FR-004, DEC-006).
+      e referenciada, **ou** spec própria aberta, **ou** primeira materialização
+      executada e validada pela `T004` desta SPEC-0002 (FR-004, DEC-006).
+- [ ] Regressão da raiz executou todas as suítes `test_deco_*.py` e
+      `deco_*.feature`; ausência, exclusão ou não execução de qualquer uma
+      causou falha demonstrada, sem falso verde (DEC-009, FR-012).
 - [ ] Contratos materializados no destino fixado pelo Plan Gate.
 - [ ] Piloto concluído e medido contra `M-1` a `M-7`, com desvios registrados,
       incluindo avaliação explícita de RISK-011.

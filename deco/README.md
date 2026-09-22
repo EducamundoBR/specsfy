@@ -106,8 +106,8 @@ Specs vigentes:
 
 | Spec | Assunto | Estado |
 | --- | --- | --- |
-| `0001-ponte-notion-repositorio/` | ponte Notion ↔ repositório: cockpit, Consulta SDD, Modo B, proveniência e reconciliação | `Defined`; Definition Gate `Passed`; Plan Gate e Delivery Gate `Pending` |
-| `0002-governanca-sdd/` | governança transversal do SDD: risco, gates, preflight, sessão e repasse | `Defined`; Definition Gate `Passed`; Plan Gate e Delivery Gate `Pending` |
+| `0001-ponte-notion-repositorio/` | ponte Notion ↔ repositório: cockpit, Consulta SDD, Modo B, proveniência e reconciliação | `Defined`; Definition e Plan Gates `Passed`; Delivery Gate `Pending` |
+| `0002-governanca-sdd/` | governança transversal do SDD: risco, gates, preflight, sessão e repasse | `Defined`; Definition e Plan Gates `Passed`; Delivery Gate `Pending` |
 
 ## Destinos pretendidos no consumidor
 

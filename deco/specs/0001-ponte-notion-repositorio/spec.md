@@ -12,11 +12,12 @@
 | ClickUp Task | |
 | Milestones | |
 | Definition Gate | Passed |
-| Plan Gate | Pending |
+| Plan Gate | Passed |
 | Delivery Gate | Pending |
+| Review state | APROVADO |
 | Evidence Contract | 1 |
 | Interface para pessoas | Sim — páginas Notion (cockpit e Consulta SDD); nenhuma superfície web criada no repositório |
-| Atualizada em | 2026-09-19 |
+| Atualizada em | 2026-09-21 |
 
 > **Decisão local de roteamento.** As specs de definição da própria camada
 > distribuível vivem em `deco/specs/<NNNN>-<slug>/`; o estado permanece no
@@ -900,6 +901,30 @@ Feature: Reconciliação da ponte sem promoção silenciosa
 
 ### 8. Plano técnico
 
+#### Integração com o plano transversal
+
+Esta spec é a etapa local do plano integrado. Ela começa somente depois de a
+SPEC-0002 entregar o preflight transversal, os contratos de revisão e o
+Contrato de Entrega. Em seguida materializa cockpit, Consulta SDD, Modo B,
+cópia derivada, reconciliação e a fronteira do Notion MCP; depois integra
+validadores, empacotamento, instalação e piloto.
+
+Todo conteúdo novo usa **Potestatem SDD** e **Camada Potestatem**. Referências
+históricas a “Camada Deco” são preservadas, e os identificadores técnicos
+`deco/`, `deco/v0.2` e `14-SpecsFy-Deco` não são renomeados nesta missão.
+
+Os perfis de risco consumidos da SPEC-0002 não são perfis técnicos de stack. A
+SPEC-0001 não cria catálogo universal. O piloto Tempus Mind Map declara contrato
+técnico local Laravel/PostgreSQL somente após censo read-only do consumidor.
+
+O Plan Gate confirmou `python3 -B -m unittest` como runner TDD canônico da
+v0.2. Esta ponte usa `tests/test_deco_*.py` e
+`tests/features/deco_*.feature`, descobertos pela regressão da raiz; nenhum
+`deco/tests/**/*.test.mjs` é planejado. A instalação base da
+SPEC-0002/T015 será revalidada após `T110`, já com a ponte integrada.
+O piloto preserva o protocolo aprovado: cinco consultas completas ou sete
+dias, o que ocorrer depois, com `M-1` exatamente 5 e `M-4`/`M-5` 5 de 5.
+
 #### Contexto existente
 
 A camada v0.1 já entrega o contrato normativo (`deco/rules/canonical.md`), o
@@ -1228,8 +1253,9 @@ Notion AI é humano por decisão da origem (`C-05`).
 
 ### 11. Estratégia TDD
 
-Estratégia de verificação, em nível de intenção. Os artefatos executáveis, seus
-caminhos e sua linguagem são **proposta a confirmar no Plan Gate**.
+Estratégia de verificação, em nível de intenção. O runner e os caminhos dos
+artefatos executáveis foram confirmados pela decisão humana deste Plan Gate;
+os testes ainda não foram implementados.
 
 - **Unidade**: leitura de cada contrato materializado — presença das cláusulas
   obrigatórias, dos estados admitidos, dos gatilhos e das vedações.
@@ -1237,11 +1263,14 @@ caminhos e sua linguagem são **proposta a confirmar no Plan Gate**.
   gatilho e vedação citado em um AC existe no contrato correspondente; nenhum
   contrato contradiz `deco/rules/canonical.md`.
 - **BDD/aceite**: a seção 6 contém vinte e oito identificadores AC e trinta e
-  cinco blocos `Scenario`. As duas contagens não são equivalentes. Os cenários
-  orientam os casos TDD; o Gherkin permanece documental.
-- **Runner TDD**: proposta — `python3 -B -m unittest`, o runner já existente na
-  raiz do monorepo (`AGENTS.md:110-118`), para não introduzir stack nova. A
-  confirmação cabe ao Plan Gate.
+  cinco blocos `Scenario`. As duas contagens não são equivalentes. O Gherkin
+  desta spec permanece fonte normativa; os cenários orientam os casos TDD e a
+  projeção executável planejada em `tests/features/deco_*.feature`.
+- **Runner TDD confirmado pela decisão humana deste Plan Gate**:
+  `python3 -B -m unittest` na raiz do monorepo; os testes da ponte ficam em
+  `tests/test_deco_*.py`, e os cenários BDD em
+  `tests/features/deco_*.feature`. A regressão do Delivery Gate deve provar
+  que todos foram descobertos e executados.
 - **E2E**: não aplicável — não há aplicação a percorrer.
 - **Verificação manual**: inevitável para as cláusulas que só se observam em uso
   real — `M-2`, `M-3`, `M-5`, o tempo entre pergunta e aplicação e os quatro itens
@@ -1367,28 +1396,17 @@ aceito não foi contornado para satisfazer esse defeito do validador.
 
 #### Gate do Ato II — Plano
 
-- **Resultado**: Pending
+- **Resultado**: Passed em 21/09/2026, por decisão humana de Deco: aprovado com as condições registradas.
 - **Comando equivalente neste monorepo**:
   `node skills/specsfy-05-tasks/scripts/validate_tasks.mjs deco/specs/0001-ponte-notion-repositorio/spec.md --allow-draft`
-- **Achados**: Pending. Este validador pertence ao Plan Gate; rodá-lo agora é
-  diagnóstico, não critério. Os achados têm **duas causas distintas, que não
-  devem ser confundidas**:
-
-  1. **Gap esperado antes do Plan Gate** — `Definition Gate precisa estar
-     Passed`, `Status precisa ser Defined…`, `Nenhuma tarefa TNNN foi
-     encontrada`, `IDs da especificação sem tarefa`, `AC-NNN não possui tarefa
-     TDD` e `N possui 0 predecessor(es) TDD`. Todos derivam da mesma causa
-     legítima: as tarefas ainda não existem porque serão geradas pelo estágio
-     próprio do Specsfy após o Definition Gate. Desaparecem sozinhos quando o
-     plano for produzido; **não indicam defeito da spec**.
-  2. **Lacuna de tooling e integração do monorepo** — `Evidence Contract 1 exige
-     verify_evidence.mjs`. Causa diferente e independente da fase: o script
-     existe em `skills/specsfy-07-implement/scripts/verify_evidence.mjs`, mas o
-     validador o procura em `<raiz>/.agents/skills/specsfy-07-implement/scripts/`,
-     caminho que só existe em projeto consumidor — e `AGENTS.md:39-40` reserva
-     `.agents/skills/` desta raiz à skill local de documentação. **Não será
-     resolvido pela geração de tarefas** e permanecerá mesmo com o plano pronto.
-     Exige decisão de integração no monorepo, fora do escopo desta fatia.
+- **Achados**: a reconferência independente recomendou aprovação após conferir
+  32/32 tarefas, tabela, grafo, cortes e correções. O validador de tarefas ainda
+  retorna o erro de caminho `verify_evidence.mjs` próprio desta raiz do monorepo;
+  não é evidência verde nem condição declarada resolvida. O diagnóstico anterior
+  à geração das tarefas fica preservado no histórico Git.
+- **Evidência FR-011 e condições**:
+  [ato de aprovação do Plan Gate](../0002-governanca-sdd/reviews/plan-gate-2026-09-21/plan-gate-approval.md).
+  `Delivery Gate` permanece `Pending`; nenhuma tarefa foi implementada.
 
 #### Gate do Ato III — Entrega
 
@@ -1436,24 +1454,160 @@ anterior foi eliminada, e não existe marcador real pendente nesta spec.
 
 ### 14. Tarefas
 
-**Nenhuma tarefa é definida nesta fase, deliberadamente.**
+Todas as tarefas permanecem abertas. `GREEN` abaixo é evidência futura esperada,
+não resultado observado nesta missão.
 
-O Definition Gate avalia definição; tarefas pertencem ao Plan Gate. O estágio
-seguinte deverá consumir somente os artefatos da ponte na seção 8, a
-rastreabilidade das seções 11 e 12 e o protocolo de segurança do piloto. Não
-deverá recriar contratos da governança transversal.
+- [ ] T101 [TEST] [TDD] Criar testes de contratos e operação offline em tests/test_deco_bridge_contracts.py — Refs: US-001, US-002, US-003, FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, NFR-001, NFR-002, NFR-003, NFR-004, AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-008, AC-009, AC-010 — Depends: none
+  - [ ] **PREP**: derivar cockpit, Consulta SDD, fonte da verdade e cópia do BDD; projetar BDD executável em `tests/features/deco_bridge_contracts.feature`.
+  - [ ] **EXECUTE**: materializar somente testes; observar RED por contratos ausentes.
+  - [ ] **VERIFY**: executar casos offline, aplicação, descarte e conflito.
+  - [ ] **VISUAL**: não aplicável; teste de contrato sem interface visual.
+  - [ ] **EVIDENCE**: registrar comando, exit e falhas RED na seção 11.
+  - [ ] **IMPROVE**: reduzir fixtures duplicadas sem perder proveniência.
+- [ ] T102 [P] [TEST] [TDD] Criar testes de segurança e Modo B em tests/test_deco_bridge_safety.py — Refs: US-001, US-002, US-003, FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, NFR-001, NFR-002, NFR-003, NFR-004, AC-011, AC-012, AC-013, AC-014, AC-015, AC-016, AC-017, AC-018, AC-019, AC-020 — Depends: none
+  - [ ] **PREP**: derivar gatilhos, limites, PII, irreversibilidade e aprovador distinto; projetar BDD executável em `tests/features/deco_bridge_safety.feature`.
+  - [ ] **EXECUTE**: materializar somente testes; observar RED pela ponte ausente.
+  - [ ] **VERIFY**: executar negativas de escopo, segredo, identidade e encerramento.
+  - [ ] **VISUAL**: não aplicável; teste de contrato sem interface visual.
+  - [ ] **EVIDENCE**: registrar casos RED e dados exclusivamente sintéticos.
+  - [ ] **IMPROVE**: manter segurança local sem duplicar o Git Guardian.
+- [ ] T103 [P] [TEST] [TDD] Criar testes de reconciliação em tests/test_deco_bridge_reconciliation.py — Refs: US-001, US-002, US-003, FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, NFR-001, NFR-002, NFR-003, NFR-004, AC-021, AC-022, AC-023, AC-024, AC-025, AC-051, AC-052, AC-053 — Depends: none
+  - [ ] **PREP**: derivar cópia por categoria, conflito material e marcos do BDD; projetar BDD executável em `tests/features/deco_bridge_reconciliation.feature`.
+  - [ ] **EXECUTE**: materializar somente testes; observar RED por reconciliação ausente.
+  - [ ] **VERIFY**: executar precedência distinta para fato técnico e negócio.
+  - [ ] **VISUAL**: não aplicável; teste de contrato sem interface visual.
+  - [ ] **EVIDENCE**: registrar casos RED, fontes e resultados esperados.
+  - [ ] **IMPROVE**: separar reconciliação de sincronização automática proibida.
+- [ ] T104 [CODE] Materializar contrato da ponte em deco/rules/notion-repository-bridge.md — Refs: FR-003, FR-004, FR-006, FR-009, FR-010, AC-001, AC-003, AC-004, AC-005, AC-014, AC-015, AC-018, AC-020, AC-021, AC-023, AC-024, AC-053 — Depends: T101, T102, T103
+  - [ ] **PREP**: fixar autoria, repositório e consumidor como planos separados.
+  - [ ] **EXECUTE**: implementar fonte da verdade, cópia derivada e operação offline.
+  - [ ] **VERIFY**: obter GREEN em conflito, indisponibilidade e proveniência.
+  - [ ] **VISUAL**: não aplicável; regra Markdown sem interface gráfica.
+  - [ ] **EVIDENCE**: registrar matriz de precedência e exemplos sintéticos.
+  - [ ] **IMPROVE**: remover duplicação de governança transversal.
+#### Fase de interface
+
+As tarefas abaixo cobrem as três interações humanas definidas na seção 10:
+cockpit, Consulta SDD e relatório do Modo B. `INTERFACE.md` não é atualizado,
+porque estas superfícies são páginas Notion e não uma interface web mantida no
+repositório.
+
+- [ ] T105 [P] [CODE] Materializar cockpit em deco/templates/notion/cockpit.md — Refs: FR-001, AC-009, AC-014, AC-017, AC-051 — Depends: T101, T102, T103
+  - [ ] **PREP**: fixar campos mínimos, estados, aprovador e gatilhos fechados.
+  - [ ] **EXECUTE**: criar template sem transformar cockpit em diário.
+  - [ ] **VERIFY**: obter GREEN em atualização por marco e rejeição fora de marco.
+  - [ ] **VISUAL**: não aplicável; template textual sem layout gráfico nesta fatia.
+  - [ ] **EVIDENCE**: registrar exemplos antes/depois sem PII.
+  - [ ] **IMPROVE**: reduzir campos sem perder rastreabilidade.
+- [ ] T106 [P] [CODE] Materializar Consulta SDD em deco/templates/notion/consulta-sdd.md — Refs: FR-002, FR-008, FR-009, FR-010, AC-002, AC-003, AC-013, AC-017, AC-019, AC-020, AC-023, AC-052, AC-053 — Depends: T101, T102, T103
+  - [ ] **PREP**: fixar pergunta única, resposta, esclarecimento e encerramento.
+  - [ ] **EXECUTE**: criar template e transições com aprovador distinto.
+  - [ ] **VERIFY**: obter GREEN em aplicação, descarte, pendência e conflito.
+  - [ ] **VISUAL**: não aplicável; template textual sem interface gráfica.
+  - [ ] **EVIDENCE**: registrar ciclo completo com dados sintéticos.
+  - [ ] **IMPROVE**: eliminar campos redundantes com cockpit.
+- [ ] T107 [CODE] Materializar fronteira MCP em deco/rules/notion-mcp-boundary.md — Refs: FR-005, AC-006, AC-007, AC-012, AC-022, AC-025 — Depends: T101, T102, T103
+  - [ ] **PREP**: fixar allowlist, preflight transversal e dados sintéticos.
+  - [ ] **EXECUTE**: implementar recusa de PII, segredo, irreversível e fora de escopo.
+  - [ ] **VERIFY**: obter GREEN nos testes negativos da subárvore autorizada.
+  - [ ] **VISUAL**: não aplicável; regra sem interface visual.
+  - [ ] **EVIDENCE**: registrar alvos mínimos e recusas sem payload sensível.
+  - [ ] **IMPROVE**: minimizar permissões sem bloquear operação autorizada.
+- [ ] T108 [P] [CODE] Materializar relatório Modo B em deco/templates/notion/modo-b.md — Refs: FR-007, AC-011, AC-012, AC-016, AC-051 — Depends: T101, T102, T103
+  - [ ] **PREP**: fixar observado, inferido, não verificado e aplicação.
+  - [ ] **EXECUTE**: criar template com gatilhos obrigatórios e encerramento.
+  - [ ] **VERIFY**: obter GREEN em classificação factual e vedação de autorização.
+  - [ ] **VISUAL**: não aplicável; template textual sem interface gráfica.
+  - [ ] **EVIDENCE**: registrar relatório sintético e decisão correspondente.
+  - [ ] **IMPROVE**: manter formato delta e contexto estável apenas linkado.
+#### Fase de integração, empacotamento e piloto
+
+- [ ] T109 [CODE] Criar validador e fixtures em deco/scripts/validate-notion-bridge.mjs — Refs: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-008, AC-009, AC-010, AC-011, AC-012, AC-013, AC-014, AC-015, AC-016, AC-017, AC-018, AC-019, AC-020, AC-021, AC-022, AC-023, AC-024, AC-025, AC-051, AC-052, AC-053 — Depends: T104, T105, T106, T107, T108
+  - [ ] **PREP**: enumerar fixtures em deco/fixtures/notion-bridge/ e os seis nomes exatos da seção 10 da SPEC-0002.
+  - [ ] **EXECUTE**: implementar códigos de saída e mensagens determinísticas; registrar os testes Python/BDD da ponte no contrato de descoberta da regressão da raiz.
+  - [ ] **VERIFY**: obter GREEN em positivos, negativos, offline e reconciliação; asseverar presença e equivalência exata dos nomes `Cockpit do projeto`, `Consulta SDD`, `Relatório Modo B`, `Limite de interação`, `Precedência e reconciliação entre repositório e Notion` e `Permissões MCP e vedações`, com falha para nome ausente, divergente ou extra.
+  - [ ] **VISUAL**: não aplicável; validador sem interface visual.
+  - [ ] **EVIDENCE**: registrar matriz fixture → requisito → resultado e comparação 6/6 dos nomes entre as duas specs, com exits dos testes negativos e IDs da suíte descobertos/executados.
+  - [ ] **IMPROVE**: compartilhar utilitários sem fundir contratos locais e transversais.
+- [ ] T110 [CODE] Integrar a ponte ao pacote e revalidar instalação em deco/manifest.json — Refs: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, NFR-001, NFR-002, NFR-003, NFR-004 — Depends: T104, T105, T106, T107, T108, T109
+  - [ ] **PREP**: atualizar escopo, hashes e documentação sem incluir deco/specs/.
+  - [ ] **EXECUTE**: integrar artefatos ao instalador/verifier transversal.
+  - [ ] **VERIFY**: após integrar a ponte, repetir a instalação sintética da SPEC-0002/T015 e obter GREEN em instalação, idempotência, conflito, rollback, escopo do manifest e runtime offline; o GREEN anterior à ponte não serve ao Delivery Gate.
+  - [ ] **VISUAL**: não aplicável; pacote sem interface visual nesta fatia.
+  - [ ] **EVIDENCE**: registrar manifest, árvore instalada e diff da fixture após a ponte, com comandos, exits e comparação antes/depois da SPEC-0002/T015.
+  - [ ] **IMPROVE**: minimizar superfície distribuída.
+- [ ] T111 [OPS] Executar censo do consumidor e registrar em deco/pilots/tempus-mind-map/acceptance.md — Refs: FR-005, FR-006, FR-008, NFR-002, NFR-003 — Depends: T110
+  - [ ] **PREP**: confirmar repo, remotes, branch, HEAD, worktrees, stashes e baseline LionCode read-only; certificar projeto não crítico, nunca o legado nem projeto com cliente ativo.
+  - [ ] **EXECUTE**: criar branch própria somente após Git Guardian formal.
+  - [ ] **VERIFY**: confirmar zero reaproveitamento automático, paths reais e elegibilidade não crítica antes de abrir branch ou iniciar piloto.
+  - [ ] **VISUAL**: não aplicável; censo operacional sem interface visual.
+  - [ ] **EVIDENCE**: registrar identificadores mínimos e nenhum segredo.
+  - [ ] **IMPROVE**: substituir paths previstos pelos observados antes da implementação.
+- [ ] T112 [DOC] Fixar fatia Laravel e isolamento em deco/pilots/tempus-mind-map/acceptance.md — Refs: FR-005, FR-008, NFR-002, NFR-003, AC-007, AC-013, AC-017, AC-025, AC-052 — Depends: T111
+  - [ ] **PREP**: registrar no contrato técnico local tipo de produto, restrições, chassi disponível, competência operacional, testes, deploy e custo de manutenção; então autenticação, dois usuários e PostgreSQL preferencial, sem catálogo universal.
+  - [ ] **EXECUTE**: decompor mapa/nós e testes de ownership sem abrir escopo extra.
+  - [ ] **VERIFY**: exigir RED/GREEN para acesso cruzado e auditoria transacional.
+  - [ ] **VISUAL**: não aplicável ao plano; UI futura fica limitada ao funcional.
+  - [ ] **EVIDENCE**: registrar caminhos reais confirmados pelo censo.
+  - [ ] **IMPROVE**: cortar acabamento antes de isolamento, testes ou auditoria.
+- [ ] T113 [DOC] Fixar mutações e exportação em deco/pilots/tempus-mind-map/acceptance.md — Refs: FR-004, FR-009, FR-010, NFR-002, AC-015, AC-019, AC-021, AC-023, AC-024, AC-053 — Depends: T112
+  - [ ] **PREP**: registrar criar, renomear, mover, transação, auditoria e job JSON.
+  - [ ] **EXECUTE**: decompor testes e rollback local sem colaboração ou realtime.
+  - [ ] **VERIFY**: exigir GREEN funcional, transacional e de exportação.
+  - [ ] **VISUAL**: não aplicável ao plano; acabamento é cortável.
+  - [ ] **EVIDENCE**: registrar critérios observáveis da fatia funcional sem reduzir a janela experimental de sete dias e cinco consultas completas.
+  - [ ] **IMPROVE**: remover funcionalidades opcionais antes de proteções.
+- [ ] T114 [OPS] Executar piloto medido e atualizações de cockpit por marco em deco/pilots/tempus-mind-map/evidence.md — Refs: FR-001, FR-002, FR-005, FR-007, FR-008, FR-009, FR-010, NFR-002, NFR-003, AC-009, AC-011, AC-012, AC-016, AC-017, AC-019, AC-020, AC-022, AC-025, AC-051, AC-052, AC-053 — Depends: T113
+  - [ ] **PREP**: confirmar preflight, allowlist, dados sintéticos e aprovador distinto.
+  - [ ] **EXECUTE**: instalar a camada, executar cinco Consultas SDD completas no fluxo real, aguardar pelo menos sete dias e atualizar o cockpit via MCP nos marcos de FR-001; a primeira atualização não substitui as demais nem a medição.
+  - [ ] **VERIFY**: manter piloto aberto até cinco consultas completas ou sete dias, o que ocorrer depois; confirmar `M-1` exatamente 5, `M-4` e `M-5` 5 de 5, `M-2` pelo menos 3 de 5, Git Guardian, revisão, handoff e ausência de produção pública.
+  - [ ] **VISUAL**: não aplicável à evidência; UI do piloto recebe apenas QA funcional.
+  - [ ] **EVIDENCE**: registrar datas de início/fim, cinco IDs de consulta e seus cinco encerramentos/releituras, métricas M-1 a M-7, atualizações de cockpit por gatilho e Contrato de Entrega.
+  - [ ] **IMPROVE**: registrar apenas problemas efetivamente observados.
+- [ ] T115 [DOC] Reconciliar pós-piloto e preparar Delivery Gate em deco/pilots/tempus-mind-map/evidence.md — Refs: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, NFR-001, NFR-002, NFR-003, NFR-004, AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-008, AC-009, AC-010, AC-011, AC-012, AC-013, AC-014, AC-015, AC-016, AC-017, AC-018, AC-019, AC-020, AC-021, AC-022, AC-023, AC-024, AC-025, AC-051, AC-052, AC-053 — Depends: T114
+  - [ ] **PREP**: comparar evidência com specs, política, protocolo M-1 a M-7 e pacote instalado após T110; entregar evidência local à SPEC-0002/T017.
+  - [ ] **EXECUTE**: corrigir não material ou abrir nova rodada para mudança material.
+  - [ ] **VERIFY**: exigir cinco consultas completas e janela mínima de sete dias, validadores focais, regressão da raiz com execução comprovada das suítes `test_deco_*.py`/`deco_*.feature` e revisão independente.
+  - [ ] **VISUAL**: não aplicável; reconciliação documental sem interface própria.
+  - [ ] **EVIDENCE**: registrar verdict, rollback e decisão humana de gate.
+  - [ ] **IMPROVE**: propor catálogo técnico somente em spec posterior.
 
 ### 15. Ordem de execução
 
-Somente a sequência macro de gates é registrada:
+1. A SPEC-0002 executa `T001`–`T015`; `T015` produz só baseline de
+   instalação transversal. `T101 || T102 || T103` iniciam o RED da ponte
+   no runner Python da raiz, sem mecanismo implementado nesta missão.
+2. `T104`, `T105 || T106`, `T107 || T108` e `T109` materializam os
+   contratos locais e validam os seis nomes da interface cruzada.
+3. `T110` integra a ponte e **repete a instalação sintética após a integração**.
+   O piloto não começa sem esse GREEN posterior; a evidência da
+   SPEC-0002/T015 isoladamente é insuficiente.
+4. `T111` faz o censo read-only e certifica elegibilidade não crítica. A
+   SPEC-0002/T016 possui o contrato transversal
+   `governance-acceptance.md`; `T112` e `T113` possuem o contrato
+   técnico local `acceptance.md`, sem sobrescrita entre specs.
+5. `T114` executa **exatamente cinco Consultas SDD completas e no mínimo
+   sete dias**, o que ocorrer depois; mantém o piloto aberto até ambos os
+   limiares. Atualizações de cockpit seguem os gatilhos, não substituem
+   consultas ou medição. `T115` reconcilia `evidence.md` local; a
+   SPEC-0002/T017 possui `governance-evidence.md` e fecha a preparação
+   transversal do Delivery Gate.
+6. A revisão independente recomendou aprovação e Deco decidiu o Plan Gate;
+   esta autoria do plano não se autoaprovou. A
+   promoção a `deco/rules/canonical.md` só pode ser decidida após o piloto
+   e a evidência do Delivery Gate.
 
-1. **Definition Gate** — revisão por instância distinta, conforme FR-008.
-2. **Plan Gate** — tarefas, caminhos físicos, formato e validação dos contratos
-   locais da ponte.
-3. **Delivery Gate** — materialização, piloto M-1 a M-7 e protocolo de segurança.
+**Caminho crítico:** `SPEC-0002/T015 → T101–T103 → T104 → T109 → T110
+[revalidação pós-ponte] → T111 → SPEC-0002/T016 → T112 → T113 → T114
+[≥7 dias; M-1=5; M-4/M-5=5/5] → T115 → SPEC-0002/T017`.
 
-A promoção eventual de contratos locais para `deco/rules/canonical.md` só pode
-ser decidida após evidência do Delivery Gate.
+**Paralelismo seguro:** T101–T103; T105–T106; T107–T108. Nenhuma tarefa
+do consumidor começa antes de T111 e do GREEN pós-ponte de T110.
+
+**Cortes disjuntos:** mínimo pilotável = `T101`–`T114`, incluindo
+`T109` e o piloto completo de `T114`; necessário para Delivery Gate =
+`T115`; pós-piloto = nenhuma tarefa desta spec. Catálogo técnico universal,
+rename e automação Notion requerem spec posterior.
 
 ## Ato III — Entregar e validar
 
@@ -1611,7 +1765,13 @@ ser decidida após evidência do Delivery Gate.
 - [ ] Contratos locais da ponte estão materializados sem tocar itens fora de
       escopo nem duplicar a governança transversal.
 - [ ] Protocolo de segurança do piloto foi cumprido apenas com dados sintéticos.
-- [ ] Piloto foi medido contra M-1 a M-7, com desvios registrados.
+- [ ] Piloto permaneceu aberto por cinco consultas completas ou sete dias, o
+      que ocorrer depois; `M-1` foi exatamente 5, `M-4` e `M-5` foram
+      5 de 5, e `M-1` a `M-7` foram medidos com desvios registrados. Uma
+      atualização do cockpit não substituiu a medição nem os demais marcos.
+- [ ] Pacote com a ponte foi reinstalado/revalidado após `T110` e a
+      regressão da raiz comprovou presença, descoberta e execução dos testes
+      `test_deco_*.py` e `deco_*.feature` antes do Delivery Gate.
 - [ ] Decisões sobre database, automação e eventual promoção para
       `deco/rules/canonical.md` foram registradas a partir da evidência.
 - [ ] Nenhum item fora de escopo foi introduzido.
