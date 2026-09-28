@@ -179,7 +179,10 @@ justificativa textual nunca substitui o token nem as entradas enumeradas.
 | `remote add`, `rename`, `set-url`, `set-head` ou `set-branches` | Mutação de remote: exige `GG_HUMAN_APPROVAL=yes` e nomes de remote presentes em `GG_TARGET`; `fetch` não exige aprovação; `remote prune --dry-run` é leitura. |
 | Paths efetivos de `add`, `rm`, `mv`, `commit`, `restore --staged`, `reset -- <path>` e `edit <alvo>`; em `commit` sem pathspec, todos os paths já staged | Precisam ficar dentro de `GG_TARGET`, que aceita vários alvos separados por espaço. |
 | Escopo amplo (`add -A`, `add -u`, `add .`, `add -p` sem path, `--pathspec-from-file`, `commit -a`, `commit -p`, `merge`, `apply`, `stash`, `reset` sem path) | Exige `GG_TARGET=.`; caso contrário, `GG-BLOQUEADO`. |
-| Nome de branch ou tag criado, trocado ou renomeado | Precisa coincidir literalmente com um item de `GG_TARGET`. |
+| Nome de branch ou tag criado, trocado ou renomeado; branch atual quando upstream, descrição, rename ou cópia não nomeiam outra | Precisa coincidir literalmente com um item de `GG_TARGET`. |
+| `worktree add` | Caminho dentro da raiz e de `GG_TARGET`; branch criada (por `-b` ou pelo nome do diretório) em `GG_TARGET`; `-f` ou `-B` é destrutivo. |
+| `pull` | Integra mudanças na árvore: exige `GG_TARGET=.` além das regras de remote. |
+| `push` sem remote explícito | Destino resolvido por `branch.<b>.pushRemote`, `remote.pushDefault` e `branch.<b>.remote`; precisa ser o remote verificado. `push.default` fora de `simple`, `current` ou `upstream` e `remote.<nome>.push` configurado bloqueiam. |
 | `main` ou `master` sem `GG_MAIN_AUTH=yes` | Somente leitura real e `git switch -c <branch>` ou `git checkout -b <branch>` a partir do HEAD observado, declarados como `branch`, podem prosseguir; qualquer outra operação ou ponto de partida bloqueia. |
 | Push com force, `+refspec` ou lease; push fora do remote e da branch verificados; `--all`, `--mirror` ou `--tags` | `GG-BLOQUEADO`; force push nunca é autorizado implicitamente. |
 | Leitura real (`status`, `log`, `diff`, `show`, listagens de branch/tag/remote/stash/worktree, `config --get`, `clean -n`) | Operação efetiva `read`; segue a classificação das demais dimensões. |
@@ -340,7 +343,8 @@ def positionals(args, valued=()):
 
 
 # Alvos efetivos do comando, confrontados depois com GG_TARGET.
-scope = {"caminhos": [], "nomes": [], "amplo": None, "cria_branch": False, "altera_remote": False}
+scope = {"caminhos": [], "nomes": [], "amplo": None, "cria_branch": False, "altera_remote": False,
+         "integra": False}
 
 
 def pathspecs(args, valued=()):
@@ -405,7 +409,21 @@ def classify_push(rest):
             delete = True
         elif spec not in PUSH_REFSPECS:
             problems.append("refspec de push fora do alvo verificado: " + spec)
-    problems += remote_problem("push", found[0] if found else None)
+    # Sem remote explícito, o destino vem da configuração, não do rótulo.
+    remote = found[0] if found else None
+    for key in ("branch." + branch + ".pushRemote", "remote.pushDefault", "branch." + branch + ".remote"):
+        if remote is None:
+            code, value = git("config", "--get", key)
+            remote = value if code == 0 and value else None
+    remote = remote or "origin"
+    problems += remote_problem("push", remote)
+    if len(found) < 2:
+        code, mode = git("config", "--get", "push.default")
+        if code == 0 and mode not in {"simple", "current", "upstream"}:
+            problems.append("push.default não suportado: " + mode)
+    code, configured = git("config", "--get-all", "remote." + remote + ".push")
+    if code == 0 and configured:
+        problems.append("refspec de push configurado no remote: " + remote)
     if delete:
         return "destructive", problems
     if force:
@@ -534,6 +552,9 @@ def classify(sub, rest, where):
             return unsupported(sub, sorted(extra)[0])
         names = positionals(rest, {"--sort", "--format", "--points-at", "-u", "--set-upstream-to"})
         if flags & write or (names and not flags & listing):
+            # Sem nome explícito, upstream, descrição, rename e cópia afetam a branch atual.
+            if not names or (flags & {"-m", "--move", "-c", "--copy"} and len(names) == 1):
+                names = [branch or "HEAD"] + names
             bind(names=names)
             return "branch", []
         return "read", []
@@ -565,6 +586,15 @@ def classify(sub, rest, where):
         elif mapped == "branch":
             bind(names=pos[1:2])
         return (mapped, []) if mapped else unsupported(sub, action)
+    if sub == "worktree" and pos[:1] == ["add"]:
+        if flags & {"-f", "--force", "-B"}:
+            return "destructive", []
+        found = positionals(rest, {"-b", "-B", "--reason"})
+        created = [rest[k + 1] for k, arg in enumerate(rest[:-1]) if arg == "-b"]
+        if not created and "--detach" not in flags and len(found) > 1:
+            created = found[2:3] or [pathlib.PurePath(found[1]).name]
+        bind(paths=found[1:2], names=created)
+        return "branch", []
     if sub == "worktree":
         action = pos[0] if pos else ""
         mapped = {"list": "read", "add": "branch", "remove": "destructive", "prune": "destructive",
@@ -608,6 +638,9 @@ def classify(sub, rest, where):
         for arg in rest:
             if shorts([arg]) & {"--upload-pack", "--refmap", "--exec"}:
                 return unsupported(sub, arg)
+        if sub == "pull":
+            scope["integra"] = True
+            bind(broad="pull")
         if (flags & {"-f", "--force", "-r", "--rebase", "-p", "--prune", "-P", "--prune-tags"}
                 or any(spec.startswith("+") or ":" in spec for spec in pos[1:])):
             return "destructive", []
@@ -706,7 +739,7 @@ if scope["altera_remote"] and approval != "yes":
     block.append("aprovação humana obrigatória para alterar remote")
 # GG_TARGET delimita escrita local: paths efetivos ficam dentro do alvo
 # declarado, nomes de branch/tag coincidem literalmente e escopo amplo exige ".".
-if (effective in {"edit", "commit", "branch"} or scope["altera_remote"]) and target:
+if (effective in {"edit", "commit", "branch"} or scope["altera_remote"] or scope["integra"]) and target:
     try:
         targets = shlex.split(target)
     except ValueError:

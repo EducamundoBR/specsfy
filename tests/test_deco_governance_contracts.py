@@ -697,6 +697,55 @@ class GitGuardianCommandTest(unittest.TestCase):
                                              GG_TARGET=target),
                                  "GG-BLOQUEADO", "branch principal sem autorização")
 
+    def test_push_resolves_configured_destination(self) -> None:
+        git(self.repo, "remote", "add", "backup", str(self.bare))
+        cases = (
+            (("branch.deco/test.pushRemote", "backup"), "remote do push diverge do remote verificado: backup"),
+            (("remote.pushDefault", "backup"), "remote do push diverge do remote verificado: backup"),
+            (("push.default", "matching"), "push.default não suportado: matching"),
+            (("remote.origin.push", "refs/heads/*:refs/heads/*"), "refspec de push configurado no remote: origin"),
+        )
+        for (key, value), fragment in cases:
+            with self.subTest(key=key):
+                git(self.repo, "config", key, value)
+                try:
+                    self.assert_only(self.publish("git push"), "GG-BLOQUEADO", fragment)
+                finally:
+                    git(self.repo, "config", "--unset", key)
+        self.assertEqual("GG-SEGURO", self.publish("git push")["veredito"])
+
+    def test_pull_worktree_and_upstream_changes_are_bound_to_target(self) -> None:
+        remote = dict(GG_REMOTE_NAME="origin", GG_EXPECTED_REMOTE_SHA=self.remote_sha)
+        self.assert_only(
+            self.run_gg(GG_OPERATION="remote", GG_COMMAND="git pull origin deco/test",
+                        GG_TARGET="AGENTS.md", **remote),
+            "GG-BLOQUEADO", "escopo amplo exige GG_TARGET=.: pull",
+        )
+        pulled = self.run_gg(GG_OPERATION="remote", GG_COMMAND="git pull origin deco/test",
+                             GG_TARGET=".", **remote)
+        self.assertEqual("GG-SEGURO", pulled["veredito"], pulled["motivos"])
+        self.assert_only(
+            self.run_gg(GG_OPERATION="branch", GG_COMMAND=f"git worktree add -b other {self.outside / 'wt'}",
+                        GG_TARGET=". other"),
+            "GG-BLOQUEADO", "alvo efetivo fora do alvo declarado: " + str(self.outside / "wt"),
+        )
+        self.assert_only(
+            self.run_gg(GG_OPERATION="branch", GG_COMMAND="git worktree add -b other wt", GG_TARGET="wt"),
+            "GG-BLOQUEADO", "alvo efetivo fora do alvo declarado: other",
+        )
+        inside = self.run_gg(GG_OPERATION="branch", GG_COMMAND="git worktree add -b other wt",
+                             GG_TARGET="wt other")
+        self.assertEqual("GG-SEGURO", inside["veredito"], inside["motivos"])
+        self.assertEqual("GG-BLOQUEADO", self.run_gg(
+            GG_OPERATION="branch", GG_COMMAND="git worktree add -f wt", GG_TARGET="wt")["veredito"])
+        for command in ("git branch --unset-upstream", "git branch -u origin/deco/test",
+                        "git branch --edit-description"):
+            with self.subTest(command=command):
+                self.assert_only(self.run_gg(GG_OPERATION="branch", GG_COMMAND=command, GG_TARGET="AGENTS.md"),
+                                 "GG-BLOQUEADO", "alvo efetivo fora do alvo declarado: deco/test")
+                result = self.run_gg(GG_OPERATION="branch", GG_COMMAND=command, GG_TARGET="deco/test")
+                self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+
     def test_explanation_never_replaces_formal_inputs(self) -> None:
         result = self.publish("git push", GG_HUMAN_APPROVAL="sim, aprovado pelo responsável")
         self.assertEqual("GG-BLOQUEADO", result["veredito"])
