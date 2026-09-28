@@ -1,13 +1,18 @@
 """SPEC-0002/T001: contratos transversais de AC-001 a AC-013.
 
 As skills são os mecanismos normativos executáveis da Camada Potestatem.
-Esta suíte verifica as obrigações declaradas nessas interfaces, sem simular
-um roteador ou um Git Guardian ainda inexistentes.
+Esta suíte verifica as obrigações declaradas nessas interfaces. A reconferência
+de T004 também exercita o preflight em repositórios Git isolados.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -207,6 +212,85 @@ class GovernanceContractsTest(unittest.TestCase):
             "origem desconhecida bloqueia formalmente": r"worktree.{0,140}origem desconhecida.{0,180}GG-BLOQUEADO",
             "aguardar explicação e reconciliação": r"(?:nenhuma altera[cç][aã]o|n[aã]o alterar).{0,160}explicad.{0,120}reconciliad",
         }, exact_tokens=("GG-BLOQUEADO",))
+
+    def test_ac012_ac013_formal_preflight_executes_fail_closed(self) -> None:
+        """O bloco versionado deve decidir com Git real, não apenas conter tokens."""
+        content = (ROOT / GIT_GUARDIAN).read_text(encoding="utf-8")
+        program = re.search(
+            r"<!-- GG_EXECUTABLE_BEGIN -->\s*```python\n(.*?)\n```\s*<!-- GG_EXECUTABLE_END -->",
+            content,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(program, "T004 precisa de saída executável versionada")
+        assert program is not None
+
+        with tempfile.TemporaryDirectory(prefix="specsfy-gg-") as temp:
+            repo = Path(temp)
+            subprocess.run(["git", "init", "-q", "-b", "deco/test", str(repo)], check=True)
+            (repo / "AGENTS.md").write_text("# Perfil de teste\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "AGENTS.md"], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "-c", "user.name=Teste", "-c",
+                 "user.email=test@example.invalid", "commit", "-qm", "base"],
+                check=True,
+            )
+            head = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True,
+            ).strip()
+            base_env = {
+                **os.environ,
+                "GG_EXPECTED_ROOT": str(repo), "GG_EXPECTED_BRANCH": "deco/test",
+                "GG_EXPECTED_HEAD": head, "GG_EXPECTED_UPSTREAM": "AUSENTE",
+                "GG_EXPECTED_REMOTE": "AUSENTE", "GG_OPERATION": "edit",
+                "GG_COMMAND": "edit AGENTS.md", "GG_TARGET": "AGENTS.md",
+                "GG_DIRTY_ORIGIN": "clean", "GG_PROTECTION": "none",
+                "GG_WORKTREES_KNOWN": "yes", "GG_CONTRADICTION": "no",
+                "GG_HUMAN_APPROVAL": "no", "GG_PROFILE": str(repo / "AGENTS.md"),
+            }
+
+            def verdict(**changes: str) -> dict[str, object]:
+                run = subprocess.run(
+                    [sys.executable, "-c", program.group(1)], cwd=repo,
+                    env={**base_env, **changes}, text=True, capture_output=True,
+                    timeout=20, check=False,
+                )
+                self.assertEqual(0, run.returncode, run.stderr)
+                result = json.loads(run.stdout)
+                self.assertIn(result["veredito"], ("GG-SEGURO", "GG-CONDICIONAL", "GG-BLOQUEADO"))
+                self.assertEqual(16, len(result["dimensoes"]))
+                return result
+
+            self.assertEqual("GG-SEGURO", verdict()["veredito"])
+            self.assertEqual("GG-BLOQUEADO", verdict(GG_EXPECTED_HEAD="0" * 40)["veredito"])
+            self.assertEqual("GG-BLOQUEADO", verdict(GG_OPERATION="publish")["veredito"])
+            self.assertEqual("GG-BLOQUEADO", verdict(GG_COMMAND="git push --force")["veredito"])
+            self.assertEqual("GG-BLOQUEADO", verdict(GG_COMMAND="git push --force=refs/heads/main")["veredito"])
+            self.assertEqual("GG-BLOQUEADO", verdict(GG_COMMAND="git push origin +deco/test")["veredito"])
+            self.assertEqual("GG-BLOQUEADO", verdict(GG_COMMAND="git push origin deco/test")["veredito"])
+            (repo / "nao-rastreado.txt").write_text("mudança\n", encoding="utf-8")
+            self.assertEqual("GG-BLOQUEADO", verdict(GG_DIRTY_ORIGIN="unknown")["veredito"])
+            self.assertEqual(
+                "GG-CONDICIONAL",
+                verdict(GG_DIRTY_ORIGIN="known", GG_PROTECTION="required")["veredito"],
+            )
+            self.assertEqual(
+                "GG-BLOQUEADO",
+                verdict(GG_DIRTY_ORIGIN="unknown", GG_PROTECTION="required")["veredito"],
+            )
+            subprocess.run(["git", "-C", str(repo), "add", "nao-rastreado.txt"], check=True)
+            staged = verdict(GG_DIRTY_ORIGIN="unknown")
+            self.assertEqual("GG-BLOQUEADO", staged["veredito"])
+            self.assertTrue(staged["dimensoes"]["4"]["stage_sujo"])
+            subprocess.run(
+                ["git", "-C", str(repo), "remote", "add", "origin", str(repo)], check=True,
+            )
+            self.assertEqual(
+                "GG-BLOQUEADO", verdict(GG_DIRTY_ORIGIN="known", GG_PROTECTION="verified")["veredito"],
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "checkout", "--detach", "-q", "HEAD"], check=True,
+            )
+            self.assertEqual("GG-BLOQUEADO", verdict()["veredito"])
 
     def test_negative_router_shallow_prose_does_not_satisfy_ac001(self) -> None:
         shallow = (
