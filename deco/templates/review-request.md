@@ -54,6 +54,8 @@ Responsável: implementador
 - **Unidade**: <preencher>
 - **Risco**: <preencher>
 - **Justificativa**: <preencher>
+- **Gate**: <preencher>
+- **Perfil**: <preencher>
 - **Branch**: <preencher>
 - **HEAD**: <preencher>
 - **Base**: <preencher>

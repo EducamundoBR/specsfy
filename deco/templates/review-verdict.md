@@ -44,6 +44,7 @@ diff e evidência que sustentam cada achado ou a ausência deles.
 - **Gate resultante**: <preencher>
 - **Decisão humana**: <preencher>
 
+Valores permitidos para `Veredito`: `APROVADO`, `CORREÇÕES SOLICITADAS` ou `REPROVADO`.
 O campo `Gate resultante` registra a recomendação do revisor; até decisão
 explícita do decisor, o gate permanece pendente. Nenhum parecer favorável sem
 teste, diff e evidência fecha gate.

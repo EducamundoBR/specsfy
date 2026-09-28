@@ -222,7 +222,7 @@ class GovernanceRoundsTest(unittest.TestCase):
     def test_ac022_ac023_three_separate_fillable_templates(self) -> None:
         """Cada papel recebe campos próprios no artefato correspondente."""
         expected = {
-            REVIEW_REQUEST: ("implementador", ("Unidade", "Risco", "Justificativa", "Branch", "HEAD", "Base", "Escopo do diff")),
+            REVIEW_REQUEST: ("implementador", ("Unidade", "Risco", "Justificativa", "Gate", "Perfil", "Branch", "HEAD", "Base", "Escopo do diff")),
             REVIEW_VERDICT: ("revisor", ("Harness", "Modelo", "Effort", "Session ID", "Evidências", "Achados P0-P3", "Veredito", "Condições", "Gate resultante")),
             CORRECTION_REPORT: ("implementador", ("Achados tratados", "Correções aplicadas", "Não aplicados e justificativa", "Novo diff", "Testes", "Estado Git", "Pedido de reconferência")),
         }
@@ -239,6 +239,14 @@ class GovernanceRoundsTest(unittest.TestCase):
                         rf"(?m)^- \*\*{re.escape(field)}\*\*: <preencher>\s*$",
                         f"{path}: campo preenchível ausente: {field}",
                     )
+
+    def test_ac022_verdict_enumerates_allowed_values(self) -> None:
+        """O modelo do revisor fixa o vocabulário do veredito da rodada."""
+        content = (ROOT / REVIEW_VERDICT).read_text(encoding="utf-8")
+        self.assertRegex(
+            content,
+            r"Valores permitidos para `Veredito`: `APROVADO`, `CORREÇÕES SOLICITADAS` ou `REPROVADO`",
+        )
 
     def test_negative_tokens_without_decision_are_rejected(self) -> None:
         shallow = "## AC-024\nCURRENT e rodada ativa.\n"
