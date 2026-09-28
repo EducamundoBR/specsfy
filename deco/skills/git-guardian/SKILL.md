@@ -175,7 +175,12 @@ justificativa textual nunca substitui o token nem as entradas enumeradas.
 | Wrappers `env`, `command`, `nohup`, `time` e `exec` sem opções; variáveis `LANG`, `LC_*`, `TZ`, `NO_COLOR` e `TERM` | Descartados antes da classificação; outras variáveis ou opções bloqueiam. |
 | Operador de shell, redirecionamento, expansão `$` ou crase; executável desconhecido; subcomando desconhecido ou alias; opção não suportada | `GG-BLOQUEADO`: parsing ambíguo nunca é tratado como leitura. |
 | Abreviação de opção longa sensível, como `--amen` ou `--forc` | Tratada como a opção completa. |
-| `push` rotulado como outra operação; `reset --hard`, `branch -D`, `checkout -- .`, `stash drop`, `clean -f`, `commit --amend` ou `rebase` rotulados como edição | Operação efetiva divergente do rótulo; `GG-BLOQUEADO`. |
+| `push` rotulado como outra operação; `reset --hard`, `branch -D` ou `-d`, `checkout -- .`, `stash drop` ou `pop`, `remote prune`, `clean -f`, `commit --amend` ou `rebase` rotulados como edição | Remoção ou reescrita tem operação efetiva `destructive`, divergente do rótulo; `GG-BLOQUEADO`. |
+| `remote add`, `rename`, `set-url`, `set-head` ou `set-branches` | Mutação de remote: exige `GG_HUMAN_APPROVAL=yes`; `fetch` não exige. |
+| Paths efetivos de `add`, `rm`, `mv`, `commit`, `restore --staged`, `reset -- <path>` e `edit <alvo>` | Precisam ficar dentro de `GG_TARGET`, que aceita vários alvos separados por espaço. |
+| Escopo amplo (`add -A`, `add -u`, `add .`, `commit -a`, `merge`, `apply`, `stash`, `reset` sem path) | Exige `GG_TARGET=.`; caso contrário, `GG-BLOQUEADO`. |
+| Nome de branch ou tag criado, trocado ou renomeado | Precisa coincidir literalmente com um item de `GG_TARGET`. |
+| `main` ou `master` sem `GG_MAIN_AUTH=yes` | Somente `git switch -c <branch>` ou `git checkout -b <branch>`, declarados como `branch`, podem prosseguir; qualquer outra operação bloqueia. |
 | Push com force, `+refspec` ou lease; push fora do remote e da branch verificados; `--all`, `--mirror` ou `--tags` | `GG-BLOQUEADO`; force push nunca é autorizado implicitamente. |
 | Leitura real (`status`, `log`, `diff`, `show`, listagens de branch/tag/remote/stash/worktree, `config --get`, `clean -n`) | Operação efetiva `read`; segue a classificação das demais dimensões. |
 
@@ -184,10 +189,12 @@ Formas declarativas sem Git (`edit <alvo>`, `write <alvo>`, `read <alvo>` e
 operação efetiva, o executável, o subcomando e o diretório-alvo.
 
 Na raiz Git, após definir as entradas `GG_*`, executar o bloco versionado pelo
-comando abaixo. Saída esperada: exatamente um objeto JSON. Rollback: nenhum.
+comando abaixo. Em projeto consumidor sem a camada instalada, `GG_SKILL` aponta
+o caminho absoluto deste arquivo; o bloco continua lendo o Git do diretório
+atual. Saída esperada: exatamente um objeto JSON. Rollback: nenhum.
 
 ```sh
-python3 -B -c 'import pathlib, re; p = pathlib.Path("deco/skills/git-guardian/SKILL.md"); s = p.read_text(encoding="utf-8"); m = re.search(r"<!-- GG_EXECUTABLE_BEGIN -->\s*```python\n(.*?)\n```\s*<!-- GG_EXECUTABLE_END -->", s, re.S); assert m, "bloco executável ausente"; exec(compile(m.group(1), str(p), "exec"))'
+python3 -B -c 'import os, pathlib, re; p = pathlib.Path(os.environ.get("GG_SKILL", "deco/skills/git-guardian/SKILL.md")); s = p.read_text(encoding="utf-8"); m = re.search(r"<!-- GG_EXECUTABLE_BEGIN -->\s*```python\n(.*?)\n```\s*<!-- GG_EXECUTABLE_END -->", s, re.S); assert m, "bloco executável ausente"; exec(compile(m.group(1), str(p), "exec"))'
 ```
 
 <!-- GG_EXECUTABLE_BEGIN -->
@@ -322,11 +329,33 @@ def positionals(args, valued=()):
             break
         if skip:
             skip = False
-        elif arg in valued:
+        elif arg in valued or (re.fullmatch(r"-[A-Za-z]+", arg) and "-" + arg[-1] in valued):
             skip = True
         elif not arg.startswith("-"):
             found.append(arg)
     return found
+
+
+# Alvos efetivos do comando, confrontados depois com GG_TARGET.
+scope = {"caminhos": [], "nomes": [], "amplo": None, "cria_branch": False, "altera_remote": False}
+
+
+def pathspecs(args, valued=()):
+    found = positionals(args, valued)
+    if "--" in args:
+        found += args[args.index("--") + 1:]
+    return found
+
+
+def bind(paths=(), names=(), broad=None):
+    if broad and not scope["amplo"]:
+        scope["amplo"] = broad
+    for path in paths:
+        if path in {".", ":", ":/", "*"} or path.startswith(":("):
+            scope["amplo"] = scope["amplo"] or path
+        else:
+            scope["caminhos"].append(path)
+    scope["nomes"].extend(names)
 
 
 def unsupported(sub, option):
@@ -397,30 +426,49 @@ def classify(sub, rest, where):
         return classify_push(rest)
     if sub in ALWAYS_DESTRUCTIVE:
         return "destructive", []
-    if sub in {"add", "mv", "apply", "format-patch"}:
+    if sub in {"add", "mv", "rm"}:
+        if sub == "rm" and flags & {"-f", "--force"}:
+            return "destructive", []
+        broad = sorted(flags & {"-A", "--all", "-u", "--update"}) if sub == "add" else []
+        bind(pathspecs(rest, {"--chmod", "--pathspec-from-file"}), broad=broad[0] if broad else None)
         return "edit", []
-    if sub == "rm":
-        return ("destructive" if flags & {"-f", "--force"} else "edit"), []
+    if sub in {"apply", "format-patch"}:
+        bind(broad=sub)
+        return "edit", []
     if sub == "commit":
         if "--amend" in flags:
             return "destructive", []
         if flags & {"-n", "--no-verify"}:
             return unsupported(sub, "--no-verify")
+        valued = {"-m", "--message", "-F", "--file", "-C", "--reuse-message", "-c", "--reedit-message",
+                  "--author", "--date", "--fixup", "--squash", "-t", "--template", "--trailer", "--cleanup"}
+        broad = sorted(flags & {"-a", "--all"})
+        bind(pathspecs(rest, valued), broad=broad[0] if broad else None)
         return "commit", []
     if sub in {"merge", "cherry-pick", "revert", "am"}:
+        bind(broad=sub)
         return ("destructive" if "--abort" in flags else "commit"), []
     if sub == "reset":
         if flags & {"--hard", "--merge", "--keep"}:
             return "destructive", []
         if flags & {"-p", "--patch"} or dashdash:
+            paths = pathspecs(rest)
+            paths = paths[1:] if paths[:1] == ["HEAD"] else paths
+            bind(paths, broad=None if paths else "reset")
             return "edit", []
         extra = flags - {"-q", "--quiet", "--mixed", "--soft", "-N"}
         if extra:
             return unsupported(sub, sorted(extra)[0])
-        return ("edit" if pos in ([], ["HEAD"]) else "destructive"), []
+        if pos in ([], ["HEAD"]):
+            bind(broad="reset")
+            return "edit", []
+        return "destructive", []
     if sub == "restore":
         staged_only = flags & {"-S", "--staged"} and not flags & {"-W", "--worktree"}
-        return ("edit" if staged_only else "destructive"), []
+        if staged_only:
+            bind(pathspecs(rest, {"-s", "--source"}))
+            return "edit", []
+        return "destructive", []
     if sub == "clean":
         dry = flags & {"-n", "--dry-run"} and not flags & {"-f", "--force", "-i", "--interactive"}
         return ("read" if dry else "destructive"), []
@@ -433,12 +481,17 @@ def classify(sub, rest, where):
         if extra:
             return unsupported(sub, sorted(extra)[0])
         if flags & {"-b", "--orphan"}:
-            return ("branch" if len(pos) <= 2 else "destructive"), []
+            if len(pos) > 2:
+                return "destructive", []
+            bind(names=pos[:1])
+            scope["cria_branch"] = "-b" in flags
+            return "branch", []
         if not pos:
             return ("branch" if "--detach" in flags else "read"), []
         if len(pos) == 1 and pos[0] != "." and not (where / pos[0]).exists():
             code, _ = git("rev-parse", "--verify", "--quiet", pos[0] + "^{commit}", where=where)
             if code == 0:
+                bind(names=pos)
                 return "branch", []
         return "destructive", []
     if sub == "switch":
@@ -448,11 +501,13 @@ def classify(sub, rest, where):
                          "--track", "--no-track", "--guess", "--no-guess", "--progress", "--no-progress"}
         if extra or not 1 <= len(pos) <= 2:
             return unsupported(sub, sorted(extra)[0] if extra else "argumentos")
+        bind(names=pos[:1])
+        scope["cria_branch"] = bool(flags & {"-c", "--create"})
         return "branch", []
     if sub == "branch":
-        if flags & {"-D", "-f", "--force", "-M", "-C"}:
+        if flags & {"-D", "-f", "--force", "-M", "-C", "-d", "--delete"}:
             return "destructive", []
-        write = {"-d", "--delete", "-m", "--move", "-c", "--copy", "-u", "--set-upstream-to",
+        write = {"-m", "--move", "-c", "--copy", "-u", "--set-upstream-to",
                  "--unset-upstream", "--edit-description", "-t", "--track", "--no-track", "--create-reflog"}
         listing = {"-l", "--list", "-a", "--all", "-r", "--remotes", "--contains", "--no-contains",
                    "--merged", "--no-merged", "--points-at", "--show-current"}
@@ -463,6 +518,7 @@ def classify(sub, rest, where):
             return unsupported(sub, sorted(extra)[0])
         names = positionals(rest, {"--sort", "--format", "--points-at", "-u", "--set-upstream-to"})
         if flags & write or (names and not flags & listing):
+            bind(names=names)
             return "branch", []
         return "read", []
     if sub == "tag":
@@ -479,18 +535,26 @@ def classify(sub, rest, where):
         names = positionals(rest, {"-m", "--message", "-F", "--file", "-u", "--local-user", "--sort",
                                    "--format", "--points-at", "--cleanup"})
         if flags & create or (names and not flags & listing):
+            bind(names=names)
             return "branch", []
         return "read", []
     if sub == "stash":
         action = rest[0] if rest and not rest[0].startswith("-") else "push"
         mapped = {"list": "read", "show": "read", "drop": "destructive", "clear": "destructive",
-                  "push": "edit", "save": "edit", "apply": "edit", "pop": "edit", "branch": "branch",
-                  "create": "edit", "store": "edit"}.get(action)
+                  "pop": "destructive", "push": "edit", "save": "edit", "apply": "edit",
+                  "branch": "branch", "create": "edit", "store": "edit"}.get(action)
+        if mapped == "edit":
+            paths = rest[rest.index("--") + 1:] if action == "push" and "--" in rest else []
+            bind(paths, broad=None if paths else "stash " + action)
+        elif mapped == "branch":
+            bind(names=pos[1:2])
         return (mapped, []) if mapped else unsupported(sub, action)
     if sub == "worktree":
         action = pos[0] if pos else ""
         mapped = {"list": "read", "add": "branch", "remove": "destructive", "prune": "destructive",
                   "lock": "edit", "unlock": "edit", "move": "edit", "repair": "edit"}.get(action)
+        if mapped in {"branch", "edit"}:
+            bind(broad="worktree " + action)
         return (mapped, []) if mapped else unsupported(sub, action or "sem ação")
     if sub == "remote":
         if not pos:
@@ -498,8 +562,9 @@ def classify(sub, rest, where):
             return unsupported(sub, sorted(extra)[0]) if extra else ("read", [])
         mapped = {"show": "read", "get-url": "read", "add": "remote", "rename": "remote",
                   "set-url": "remote", "set-head": "remote", "set-branches": "remote",
-                  "update": "remote", "prune": "remote", "remove": "destructive",
+                  "update": "remote", "prune": "destructive", "remove": "destructive",
                   "rm": "destructive"}.get(pos[0])
+        scope["altera_remote"] = pos[0] in {"add", "rename", "set-url", "set-head", "set-branches"}
         return (mapped, []) if mapped else unsupported(sub, pos[0])
     if sub == "config":
         getters = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list",
@@ -555,6 +620,8 @@ def analyze(text):
     detail["executavel"] = exe
     if exe in DECLARATIVE and args and not any(arg.startswith("-") for arg in args):
         detail["operacao_efetiva"] = DECLARATIVE[exe]
+        if DECLARATIVE[exe] == "edit":
+            bind(args)
         return detail, []
     if pathlib.PurePosixPath(exe).name not in {"git", "git.exe"}:
         return detail, ["executável não reconhecido: " + exe]
@@ -613,6 +680,28 @@ block.extend(command_problems)
 effective = command_detail["operacao_efetiva"]
 if effective is not None and operation and effective != operation:
     block.append("operação declarada (" + operation + ") não corresponde ao comando efetivo (" + effective + ")")
+if scope["altera_remote"] and approval != "yes":
+    block.append("aprovação humana obrigatória para alterar remote")
+# GG_TARGET delimita escrita local: paths efetivos ficam dentro do alvo
+# declarado, nomes de branch/tag coincidem literalmente e escopo amplo exige ".".
+if effective in {"edit", "commit", "branch"} and target:
+    try:
+        targets = shlex.split(target)
+    except ValueError:
+        targets = []
+        block.append("alvo declarado inválido")
+    if scope["amplo"] and "." not in targets:
+        block.append("escopo amplo exige GG_TARGET=.: " + scope["amplo"])
+    for name in scope["nomes"]:
+        if name not in targets:
+            block.append("alvo efetivo fora do alvo declarado: " + name)
+    base = pathlib.Path(command_detail["diretorio_alvo"] or cwd)
+    for path in scope["caminhos"]:
+        resolved = (base / path).resolve()
+        inside = root is not None and resolved.is_relative_to(root) and any(
+            resolved.is_relative_to((root / item).resolve()) for item in targets)
+        if not inside:
+            block.append("alvo efetivo fora do alvo declarado: " + path)
 
 for name, code in (("raiz", root_code), ("branch", branch_code),
                    ("HEAD", head_code), ("working tree", status_code),
@@ -627,7 +716,8 @@ if branch_code != 0 or not branch or branch != expected_branch:
     block.append("branch divergente ou detached HEAD")
 if head_code != 0 or head != expected_head:
     block.append("HEAD divergente")
-if branch in {"main", "master"} and e.get("GG_MAIN_AUTH") != "yes":
+creating_safe_branch = scope["cria_branch"] and operation == "branch" and effective == "branch"
+if branch in {"main", "master"} and e.get("GG_MAIN_AUTH") != "yes" and not creating_safe_branch:
     block.append("branch principal sem autorização")
 if not pathlib.Path(profile).is_file() or root is None or not pathlib.Path(profile).resolve().is_relative_to(root):
     block.append("perfil do repositório ausente")
@@ -725,7 +815,8 @@ dimensions = {
     "7": {"worktrees": worktree_count, "origem_conhecida": worktrees_known == "yes"},
     "8": {"stashes": len(stashes.splitlines()) if stashes else 0},
     "9": {"tags_no_HEAD": len(tags.splitlines()) if tags else 0},
-    "10": {"operacao": operation, "comando": command, "alvo": target, **command_detail},
+    "10": {"operacao": operation, "comando": command, "alvo": target, **command_detail,
+           "alvos_efetivos": scope["caminhos"] + scope["nomes"], "escopo_amplo": scope["amplo"]},
     "11": {"perfil_presente": pathlib.Path(profile).is_file()},
     "12": {"contradicao": contradiction},
     "13": {"protecao": protection},

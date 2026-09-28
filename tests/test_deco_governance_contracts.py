@@ -457,6 +457,8 @@ class GitGuardianCommandTest(unittest.TestCase):
             ("git branch --delet --forc deco/test", "branch"), ("git rm --forc AGENTS.md", "edit"),
             ("git restore --stag --work AGENTS.md", "edit"), ("git merge --abo", "commit"),
             ("git pull --reb", "remote"), ("git clean --forc", "edit"),
+            ("git branch -d spare", "branch"), ("git branch --delete spare", "branch"),
+            ("git stash pop", "edit"), ("git remote prune origin", "remote"),
         )
         for command, declared in cases:
             with self.subTest(command=command, declared=declared):
@@ -534,16 +536,18 @@ class GitGuardianCommandTest(unittest.TestCase):
 
     def test_matching_label_is_safe_and_command_is_never_executed(self) -> None:
         cases = (
-            ("git branch gg-canary", "branch"), ("git switch -c gg-canary", "branch"),
-            ("git tag gg-canary", "branch"), ("git commit --allow-empty -m canary", "commit"),
-            ("git add AGENTS.md", "edit"), ("edit AGENTS.md", "edit"),
-            ("git fetch origin", "remote"),
+            ("git branch gg-canary", "branch", "gg-canary"),
+            ("git switch -c gg-canary", "branch", "gg-canary"),
+            ("git tag gg-canary", "branch", "gg-canary"),
+            ("git commit --allow-empty -m canary", "commit", "repo"),
+            ("git add AGENTS.md", "edit", "AGENTS.md"), ("edit AGENTS.md", "edit", "AGENTS.md"),
+            ("git fetch origin", "remote", "origin"),
         )
-        for command, declared in cases:
+        for command, declared, target in cases:
             with self.subTest(command=command):
                 result = self.run_gg(
-                    GG_OPERATION=declared, GG_COMMAND=command, GG_REMOTE_NAME="origin",
-                    GG_EXPECTED_REMOTE_SHA=self.remote_sha,
+                    GG_OPERATION=declared, GG_COMMAND=command, GG_TARGET=target,
+                    GG_REMOTE_NAME="origin", GG_EXPECTED_REMOTE_SHA=self.remote_sha,
                 )
                 self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
                 self.assertEqual(declared, result["dimensoes"]["10"]["operacao_efetiva"])
@@ -596,6 +600,65 @@ class GitGuardianCommandTest(unittest.TestCase):
         for command, fragment in cases:
             with self.subTest(command=command):
                 self.assert_only(self.publish(command), "GG-BLOQUEADO", fragment)
+
+    def test_remote_mutation_requires_human_approval(self) -> None:
+        remote = dict(GG_OPERATION="remote", GG_REMOTE_NAME="origin",
+                      GG_EXPECTED_REMOTE_SHA=self.remote_sha, GG_TARGET="origin")
+        for command in ("git remote set-url origin /tmp/outro.git", "git remote add backup /tmp/b.git",
+                        "git remote rename origin antigo", "git remote set-head origin deco/test"):
+            with self.subTest(command=command):
+                self.assert_only(self.run_gg(GG_COMMAND=command, **remote), "GG-BLOQUEADO",
+                                 "aprovação humana obrigatória para alterar remote")
+                approved = self.run_gg(GG_COMMAND=command, GG_HUMAN_APPROVAL="yes", **remote)
+                self.assertEqual("GG-SEGURO", approved["veredito"], approved["motivos"])
+        fetch = self.run_gg(GG_COMMAND="git fetch origin", **remote)
+        self.assertEqual("GG-SEGURO", fetch["veredito"], fetch["motivos"])
+
+    def test_effective_target_is_bound_to_declared_target(self) -> None:
+        blocked = (
+            ("git add -A", "edit", "README.md", "escopo amplo exige GG_TARGET=."),
+            ("git add .", "edit", "AGENTS.md", "escopo amplo exige GG_TARGET=."),
+            ("git add -u", "edit", "AGENTS.md", "escopo amplo exige GG_TARGET=."),
+            ("git commit -a -m x", "commit", "AGENTS.md", "escopo amplo exige GG_TARGET=."),
+            ("git commit -am x", "commit", "AGENTS.md", "escopo amplo exige GG_TARGET=."),
+            ("git add outro.txt", "edit", "AGENTS.md", "alvo efetivo fora do alvo declarado: outro.txt"),
+            ("git add ../fora.txt", "edit", ".", "alvo efetivo fora do alvo declarado: ../fora.txt"),
+            ("edit README.md", "edit", "AGENTS.md", "alvo efetivo fora do alvo declarado: README.md"),
+            ("git commit -m x -- outro.txt", "commit", "AGENTS.md",
+             "alvo efetivo fora do alvo declarado: outro.txt"),
+            ("git branch gg-canary", "branch", "outra", "alvo efetivo fora do alvo declarado: gg-canary"),
+            ("git switch -c gg-canary", "branch", ".", "alvo efetivo fora do alvo declarado: gg-canary"),
+        )
+        for command, declared, target, fragment in blocked:
+            with self.subTest(command=command, target=target):
+                self.assert_only(self.run_gg(GG_OPERATION=declared, GG_COMMAND=command, GG_TARGET=target),
+                                 "GG-BLOQUEADO", fragment)
+        allowed = (
+            ("git add -A", "edit", "."), ("git add AGENTS.md", "edit", "AGENTS.md"),
+            ("git add docs/a.md", "edit", "docs"), ("git add a.md b.md", "edit", "a.md b.md"),
+            ("git commit -m x", "commit", "AGENTS.md"), ("git commit -am x", "commit", "."),
+            ("edit 'docs/com espaço.md'", "edit", "docs"),
+        )
+        for command, declared, target in allowed:
+            with self.subTest(command=command, target=target):
+                result = self.run_gg(GG_OPERATION=declared, GG_COMMAND=command, GG_TARGET=target)
+                self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+
+    def test_main_allows_only_safe_branch_creation_without_authorization(self) -> None:
+        git(self.repo, "checkout", "-q", "-b", "main")
+        main = dict(GG_EXPECTED_BRANCH="main", GG_EXPECTED_UPSTREAM="AUSENTE")
+        for command in ("git switch -c piloto/demo", "git checkout -b piloto/demo"):
+            with self.subTest(command=command):
+                result = self.run_gg(**main, GG_OPERATION="branch", GG_COMMAND=command,
+                                     GG_TARGET="piloto/demo")
+                self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+        for command, declared in (("git commit -m x", "commit"), ("edit AGENTS.md", "edit"),
+                                  ("git branch piloto/demo", "branch")):
+            with self.subTest(command=command):
+                target = "piloto/demo" if declared == "branch" else "AGENTS.md"
+                self.assert_only(self.run_gg(**main, GG_OPERATION=declared, GG_COMMAND=command,
+                                             GG_TARGET=target),
+                                 "GG-BLOQUEADO", "branch principal sem autorização")
 
     def test_explanation_never_replaces_formal_inputs(self) -> None:
         result = self.publish("git push", GG_HUMAN_APPROVAL="sim, aprovado pelo responsável")
