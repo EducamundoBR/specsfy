@@ -69,6 +69,37 @@ def contract_checks(
     return checks
 
 
+FIELD = re.compile(r"(?m)^- \*\*(.+?)\*\*: (.*?)\s*$")
+VERDICTS = {"APROVADO", "CORREÇÕES SOLICITADAS", "REPROVADO"}
+
+
+def template_fields(template: Path) -> list[str]:
+    content = (ROOT / template).read_text(encoding="utf-8")
+    return [name for name, value in FIELD.findall(content) if value == "<preencher>"]
+
+
+def validate_round_artifact(
+    template: Path, text: str, *, observed_head: str, request: str,
+) -> list[str]:
+    """Confere um artefato preenchido contra os campos obrigatórios do modelo."""
+    values = dict(FIELD.findall(text))
+    problems = []
+    for field in template_fields(template):
+        if field not in values:
+            problems.append(f"campo ausente: {field}")
+        elif not values[field] or values[field] == "<preencher>":
+            problems.append(f"campo não preenchido: {field}")
+    if template == REVIEW_REQUEST and "HEAD" in values and values["HEAD"] != observed_head:
+        problems.append("HEAD divergente da base observada")
+    if template == REVIEW_VERDICT:
+        requested = dict(FIELD.findall(request))
+        if values.get("Veredito") and values["Veredito"] not in VERDICTS:
+            problems.append(f"veredito fora do vocabulário: {values['Veredito']}")
+        if values.get("Session ID") == requested.get("Session ID") or values.get("Revisor") == requested.get("Implementador"):
+            problems.append("revisor e implementador na mesma sessão")
+    return problems
+
+
 class GovernanceRoundsTest(unittest.TestCase):
     def assert_contract(
         self,
@@ -247,6 +278,36 @@ class GovernanceRoundsTest(unittest.TestCase):
             content,
             r"Valores permitidos para `Veredito`: `APROVADO`, `CORREÇÕES SOLICITADAS` ou `REPROVADO`",
         )
+
+    def test_t006_fixtures_follow_template_schema(self) -> None:
+        """T006: fixtures válidas/inválidas conferidas contra os campos dos modelos.
+
+        O modelo é o schema; o validador integrado e o inventário são de T013.
+        """
+        observed_head = "a" * 40
+        request = self.round_fixture("request-valid.md")
+        cases = {
+            "request-valid.md": (REVIEW_REQUEST, []),
+            "request-missing-field.md": (REVIEW_REQUEST, ["campo ausente: Session ID"]),
+            "request-placeholder.md": (REVIEW_REQUEST, ["campo não preenchido: Testes"]),
+            "request-divergent-head.md": (REVIEW_REQUEST, ["HEAD divergente da base observada"]),
+            "verdict-valid.md": (REVIEW_VERDICT, []),
+            "verdict-invalid-value.md": (REVIEW_VERDICT, ["veredito fora do vocabulário: OK"]),
+            "verdict-same-session.md": (REVIEW_VERDICT, ["revisor e implementador na mesma sessão"]),
+            "correction-valid.md": (CORRECTION_REPORT, []),
+            "correction-missing-field.md": (CORRECTION_REPORT, ["campo ausente: Estado Git"]),
+        }
+        for name, (template, expected) in cases.items():
+            with self.subTest(fixture=name):
+                problems = validate_round_artifact(
+                    template, self.round_fixture(name), observed_head=observed_head, request=request,
+                )
+                self.assertEqual(expected, problems)
+
+    def round_fixture(self, name: str) -> str:
+        path = ROOT / "deco/fixtures/review-round" / name
+        self.assertTrue(path.is_file(), f"fixture ausente: {path}")
+        return path.read_text(encoding="utf-8")
 
     def test_negative_tokens_without_decision_are_rejected(self) -> None:
         shallow = "## AC-024\nCURRENT e rodada ativa.\n"

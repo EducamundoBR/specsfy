@@ -58,11 +58,17 @@ deco/
 │   ├── canonical.md                   seis peças + dois guardrails (normativo)
 │   └── candidates.md                  heurísticas não aprovadas (não normativo)
 ├── skills/
-│   └── fechar-sessao-deco/SKILL.md    procedimento do contrato de handoff
+│   ├── fechar-sessao-deco/SKILL.md    procedimento do contrato de handoff
+│   ├── git-guardian/SKILL.md          preflight Git executável (SPEC-0002/T004)
+│   └── session-guardian/SKILL.md      abertura e fechamento de sessão (SPEC-0002/T005)
 ├── templates/
 │   ├── HANDOFF.md                     ponteiro para o snapshot ativo
-│   └── session-handoff.md             base do snapshot datado
+│   ├── session-handoff.md             base do snapshot datado
+│   ├── review-request.md              contratos da rodada de revisão (SPEC-0002/T006)
+│   ├── review-verdict.md              modelo do revisor
+│   └── correction-report.md           modelo do implementador na reconferência
 ├── fixtures/handoff/                  cenários documentais para o verifier da v0.2
+├── fixtures/review-round/             artefatos de rodada válidos e inválidos (T006)
 └── specs/                             specs do desenvolvimento da própria camada
     └── <NNNN>-<slug>/
         ├── spec.md                    fonte normativa da fatia (Specsfy/2.0)
