@@ -5,6 +5,10 @@ Este arquivo define os campos e decisões para três artefatos distintos de uma
 Verdict e Correction Report; cada bloco abaixo é um modelo, não um parecer
 preenchido. O implementador redige pedido e correções; o revisor redige o
 veredito; o decisor humano registra o gate. Nenhum autor se autoaprova.
+Copiar apenas o modelo preenchível deste arquivo para o pedido da rodada. O
+revisor usa `review-verdict.md`; o implementador usa `correction-report.md`
+quando houver achados. Os três arquivos da rodada são distintos e não se
+sobrescrevem.
 
 ## Estados e pré-condições
 
@@ -39,10 +43,38 @@ unidade traz escopo, base, risco, evidência e decisor identificados.
 ### AC-021 — Review Request (implementador)
 
 Preencher o artefato de pedido em formato delta, referenciando fontes canônicas.
-Não colar histórico de conversa nem transcript. Campo desconhecido recebe
-`NÃO REGISTRADO`, com impacto e ação para completar; campo obrigatório ausente
-mantém `RASCUNHO`.
-Sem histórico de conversa no pedido: referenciar apenas fontes estáveis.
+Campo desconhecido recebe `NÃO REGISTRADO`, com impacto e ação para completar;
+campo obrigatório ausente mantém `RASCUNHO`. Sem histórico de conversa ou
+transcript no pedido: referenciar apenas fontes estáveis.
+
+**Modelo preenchível do pedido**
+
+Responsável: implementador
+
+- **Unidade**: <preencher>
+- **Risco**: <preencher>
+- **Justificativa**: <preencher>
+- **Branch**: <preencher>
+- **HEAD**: <preencher>
+- **Base**: <preencher>
+- **Escopo do diff**: <preencher>
+- **Arquivos**: <preencher>
+- **Testes**: <preencher>
+- **Decisões**: <preencher>
+- **Dúvidas**: <preencher>
+- **Fontes**: <preencher>
+- **Restrições**: <preencher>
+- **Harness**: <preencher>
+- **Modelo**: <preencher>
+- **Effort**: <preencher>
+- **Session ID**: <preencher>
+- **Implementador**: <preencher>
+- **Revisor designado**: <preencher>
+- **Decisor designado**: <preencher>
+
+Exemplo válido: base e HEAD observados, diff delimitado, testes com resultados
+e proveniência completa. Exemplo inválido: `HEAD` apenas presumido ou `Session ID`
+ausente; manter `RASCUNHO`, sem enviar ao revisor.
 
 | Condição | Resultado |
 | --- | --- |
@@ -81,12 +113,11 @@ por instância distinta. Identidade nominal coincidente também bloqueia.
 ### AC-023 — Correction Report (implementador)
 
 Correções em lote preservam uma reconferência por rodada. Correction Report fica
-na mesma rodada e registra achados tratados, correções aplicadas, achados não
-aplicados com justificativa, novo diff e testes, estado Git e pedido de
-reconferência. Enviar ao mesmo revisor uma única vez, com pacote consolidado;
+na mesma rodada. Enviar ao mesmo revisor uma única vez, com pacote consolidado;
 nenhuma revisão isolada para cada correção. Revisor confere cada achado e a
 regressão; correção não material permanece no mesmo `CURRENT`.
-Registrar achados tratados, correções aplicadas e achados não aplicados com justificativa.
+Registrar achados tratados, correções aplicadas e achados não aplicados com justificativa,
+novo diff, testes, estado Git e pedido de reconferência.
 
 | Condição | Resultado |
 | --- | --- |

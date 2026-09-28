@@ -1,7 +1,7 @@
 """SPEC-0002/T002: contratos de sessão, rodada e ponteiros (AC-014–AC-026).
 
-Esta suíte materializa somente os oráculos TDD. Os mecanismos responsáveis
-continuam ausentes nesta tarefa, portanto o RED é o resultado normativo.
+Os oráculos de contrato foram publicados em T002. A reconferência de T006
+também exige os dois modelos preenchíveis previstos pelo Plan Gate.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SESSION_GUARDIAN = Path("deco/skills/session-guardian/SKILL.md")
 REVIEW_REQUEST = Path("deco/templates/review-request.md")
+REVIEW_VERDICT = Path("deco/templates/review-verdict.md")
+CORRECTION_REPORT = Path("deco/templates/correction-report.md")
 
 
 def normative_section(content: str, ac: str) -> str:
@@ -216,6 +218,27 @@ class GovernanceRoundsTest(unittest.TestCase):
             "nova rodada e ponteiro": r"MUDANÇA MATERIAL.{0,160}nova rodada.{0,160}CURRENT",
             "anterior encerrada sem rewrite": r"rodada anterior.{0,140}encerrad.{0,140}sem.{0,80}reescrit",
         }, exact_tokens=("MUDANÇA MATERIAL", "CURRENT"))
+
+    def test_ac022_ac023_three_separate_fillable_templates(self) -> None:
+        """Cada papel recebe campos próprios no artefato correspondente."""
+        expected = {
+            REVIEW_REQUEST: ("implementador", ("Unidade", "Risco", "Justificativa", "Branch", "HEAD", "Base", "Escopo do diff")),
+            REVIEW_VERDICT: ("revisor", ("Harness", "Modelo", "Effort", "Session ID", "Evidências", "Achados P0-P3", "Veredito", "Condições", "Gate resultante")),
+            CORRECTION_REPORT: ("implementador", ("Achados tratados", "Correções aplicadas", "Não aplicados e justificativa", "Novo diff", "Testes", "Estado Git", "Pedido de reconferência")),
+        }
+        self.assertEqual(3, len(expected))
+        for path, (owner, fields) in expected.items():
+            with self.subTest(path=path):
+                artifact = ROOT / path
+                self.assertTrue(artifact.is_file(), f"modelo ausente: {path}")
+                content = artifact.read_text(encoding="utf-8")
+                self.assertRegex(content, rf"(?im)^Responsável:\s*{owner}\s*$")
+                for field in fields:
+                    self.assertRegex(
+                        content,
+                        rf"(?m)^- \*\*{re.escape(field)}\*\*: <preencher>\s*$",
+                        f"{path}: campo preenchível ausente: {field}",
+                    )
 
     def test_negative_tokens_without_decision_are_rejected(self) -> None:
         shallow = "## AC-024\nCURRENT e rodada ativa.\n"
