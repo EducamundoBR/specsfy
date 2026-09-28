@@ -76,11 +76,11 @@ por `CURRENT`. Nenhuma delas substitui decisão humana de gate.
 ### AC-017 — Fechamento e imutabilidade
 
 No fechamento, preencher cinco campos com porquê de cada decisão, fatos e links
-em delta. Manter exatamente um contexto ativo. Marcar o anterior `SUPERADO` sem
-reescrever seu conteúdo; publicar snapshot e `SESSION_CURRENT` de forma conjunta
-ou atômica, então reler ambos. Se a atualização conjunta falhar, não declarar
-fechamento; restaurar o ponteiro anterior e verificar sua integridade antes de
-nova tentativa. O snapshot superado permanece rastreável.
+em delta. Manter exatamente um contexto ativo. Publicar snapshot e
+`SESSION_CURRENT` de forma conjunta ou atômica, então reler ambos. Se a
+atualização conjunta falhar, não declarar fechamento; restaurar o ponteiro
+anterior e verificar sua integridade antes de nova tentativa. O snapshot
+superado permanece rastreável.
 O contexto anterior fica superado sem reescrita de seu conteúdo.
 
 | Condição | Resultado |
