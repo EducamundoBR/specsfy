@@ -339,5 +339,311 @@ class GovernanceContractsTest(unittest.TestCase):
                 self.assertFalse(checks[f"token exato {token}"])
 
 
+def git_guardian_program() -> str:
+    content = (ROOT / GIT_GUARDIAN).read_text(encoding="utf-8")
+    program = re.search(
+        r"<!-- GG_EXECUTABLE_BEGIN -->\s*```python\n(.*?)\n```\s*<!-- GG_EXECUTABLE_END -->",
+        content,
+        re.DOTALL,
+    )
+    if program is None:
+        raise AssertionError("T004 precisa de saída executável versionada")
+    return program.group(1)
+
+
+def git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=Teste", "-c",
+         "user.email=test@example.invalid", *args],
+        check=True, text=True, capture_output=True,
+    ).stdout.strip()
+
+
+class GitGuardianCommandTest(unittest.TestCase):
+    """T004/P1: o GG deriva a operação do comando efetivo, sem confiar no rótulo.
+
+    Cada caso isola uma causa: o ambiente-base é GG-SEGURO e a asserção confere
+    os motivos emitidos, não apenas o veredito.
+    """
+
+    def setUp(self) -> None:
+        self.program = git_guardian_program()
+        self.temp = tempfile.TemporaryDirectory(prefix="specsfy-gg-cmd-")
+        base = Path(self.temp.name).resolve()
+        self.outside = base / "fora"
+        self.outside.mkdir()
+        self.bare = base / "remoto.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(self.bare)], check=True)
+        self.repo = base / "repo"
+        subprocess.run(["git", "init", "-q", "-b", "deco/test", str(self.repo)], check=True)
+        (self.repo / "AGENTS.md").write_text("# Perfil de teste\n", encoding="utf-8")
+        git(self.repo, "add", "AGENTS.md")
+        git(self.repo, "commit", "-qm", "base")
+        git(self.repo, "remote", "add", "origin", str(self.bare))
+        git(self.repo, "push", "-q", "-u", "origin", "deco/test")
+        self.remote_sha = git(self.repo, "rev-parse", "HEAD")
+        git(self.repo, "commit", "-q", "--allow-empty", "-m", "local")
+        self.head = git(self.repo, "rev-parse", "HEAD")
+        self.env = {
+            **os.environ,
+            "GG_EXPECTED_ROOT": str(self.repo), "GG_EXPECTED_BRANCH": "deco/test",
+            "GG_EXPECTED_HEAD": self.head, "GG_EXPECTED_UPSTREAM": "origin/deco/test",
+            "GG_EXPECTED_AHEAD": "1", "GG_EXPECTED_BEHIND": "0",
+            "GG_EXPECTED_REMOTE": f"origin {self.bare}", "GG_OPERATION": "read",
+            "GG_COMMAND": "git status", "GG_TARGET": "repo",
+            "GG_DIRTY_ORIGIN": "clean", "GG_PROTECTION": "none",
+            "GG_WORKTREES_KNOWN": "yes", "GG_CONTRADICTION": "no",
+            "GG_HUMAN_APPROVAL": "no", "GG_PROFILE": str(self.repo / "AGENTS.md"),
+        }
+        for name in ("GG_MAIN_AUTH", "GG_FORCE_PUSH", "GG_REMOTE_NAME", "GG_EXPECTED_REMOTE_SHA"):
+            self.env.pop(name, None)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def run_gg(self, **changes: str) -> dict[str, object]:
+        run = subprocess.run(
+            [sys.executable, "-B", "-c", self.program], cwd=self.repo,
+            env={**self.env, **changes}, text=True, capture_output=True,
+            timeout=30, check=False,
+        )
+        self.assertEqual(0, run.returncode, run.stderr)
+        result = json.loads(run.stdout)
+        self.assertIn(result["veredito"], ("GG-SEGURO", "GG-CONDICIONAL", "GG-BLOQUEADO"))
+        self.assertEqual(16, len(result["dimensoes"]))
+        return result
+
+    def publish(self, command: str, **changes: str) -> dict[str, object]:
+        return self.run_gg(**{
+            "GG_OPERATION": "publish", "GG_COMMAND": command,
+            "GG_HUMAN_APPROVAL": "yes", "GG_REMOTE_NAME": "origin",
+            "GG_EXPECTED_REMOTE_SHA": self.remote_sha, **changes,
+        })
+
+    def assert_only(self, result: dict[str, object], verdict: str, fragment: str) -> None:
+        motivos = result["motivos"]
+        self.assertEqual(verdict, result["veredito"], motivos)
+        self.assertEqual(1, len(motivos), motivos)
+        self.assertIn(fragment, motivos[0])
+
+    def test_base_environment_is_safe(self) -> None:
+        result = self.run_gg()
+        self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+        self.assertEqual([], result["motivos"])
+        self.assertEqual("read", result["dimensoes"]["10"]["operacao_efetiva"])
+
+    def test_sensitive_command_never_escapes_by_declared_label(self) -> None:
+        cases = (
+            ("git -C . push", "edit"), ("git -C . push", "read"),
+            ("git -C . -c color.ui=never push origin deco/test", "commit"),
+            ("git reset --hard", "edit"), ("git reset --hard HEAD~1", "read"),
+            ("git --git-dir=.git --work-tree=. reset --hard", "edit"),
+            ("git reset HEAD~1", "edit"), ("git branch -D deco/test", "branch"),
+            ("git branch -f deco/test HEAD~1", "branch"), ("git checkout -- .", "edit"),
+            ("git checkout .", "edit"), ("git checkout -f deco/test", "branch"),
+            ("git switch --discard-changes deco/test", "branch"),
+            ("git restore AGENTS.md", "edit"), ("git stash drop", "edit"),
+            ("git stash clear", "edit"), ("git clean -fdx", "edit"),
+            ("git commit --amend -m x", "commit"), ("git rebase HEAD~1", "commit"),
+            ("git push --delete origin deco/test", "remote"),
+            ("git tag -d v1", "branch"), ("git worktree remove x", "branch"),
+            ("git update-ref -d refs/heads/deco/test", "branch"),
+            ("git reflog expire --all", "read"), ("git gc --prune=now", "edit"),
+            ("env LANG=C git push", "read"), ("nohup git push", "read"),
+            ("/usr/bin/git push", "read"), ("\\git push", "read"),
+            ("command git push", "read"), ("time git push", "read"),
+            ("git push # leitura", "read"), ("git fetch origin deco/test:deco/test", "remote"),
+            ("git reset --har", "edit"), ("git commit --amen -m x", "commit"),
+            ("git branch --delet --forc deco/test", "branch"), ("git rm --forc AGENTS.md", "edit"),
+            ("git restore --stag --work AGENTS.md", "edit"), ("git merge --abo", "commit"),
+            ("git pull --reb", "remote"), ("git clean --forc", "edit"),
+        )
+        for command, declared in cases:
+            with self.subTest(command=command, declared=declared):
+                result = self.run_gg(GG_OPERATION=declared, GG_COMMAND=command)
+                self.assertEqual("GG-BLOQUEADO", result["veredito"], result["motivos"])
+                self.assertTrue(
+                    any("não corresponde ao comando efetivo" in m for m in result["motivos"]),
+                    result["motivos"],
+                )
+                self.assertNotEqual(declared, result["dimensoes"]["10"]["operacao_efetiva"])
+
+    def test_unknown_or_ambiguous_parsing_blocks(self) -> None:
+        cases = (
+            ("git st", "subcomando Git desconhecido"),
+            ("git -c alias.st=push st", "configuração -c não permitida"),
+            ("git -c core.fsmonitor=x status", "configuração -c não permitida"),
+            ("git status; git push", "comando composto"),
+            ("git status && git push", "comando composto"),
+            ("git status | cat", "comando composto"),
+            ("git log > saida.txt", "comando composto"),
+            ("git push $REMOTO", "comando composto"),
+            ("git $(echo push)", "comando composto"),
+            ("sh -c 'git push'", "executável não reconhecido"),
+            ("sudo git status", "executável não reconhecido"),
+            ("python3 -c pass", "executável não reconhecido"),
+            ("env -i git status", "wrapper com opção não suportada"),
+            ("GIT_DIR=/tmp/x git status", "variável de ambiente não permitida"),
+            ("git --exec-path=/tmp status", "opção global do Git desconhecida"),
+            ("git --bare status", "opção global do Git desconhecida"),
+            ("git -C", "opção global do Git sem valor"),
+            ("git", "git sem subcomando"),
+            ("git 'status", "comando pretendido inválido"),
+            ("git config core.hooksPath /tmp", "escrita de configuração Git"),
+            ("git push --no-verify", "opção não suportada em git push"),
+            ("git diff --ext-diff", "opção não suportada em git diff"),
+            ("git log --output=x.txt", "opção não suportada em git log"),
+            ("git log --out=x.txt", "opção não suportada em git log"),
+            ("git commit --no-verif -m x", "opção não suportada em git commit"),
+            ("git push --no-verify origin deco/test", "opção não suportada em git push"),
+        )
+        for command, fragment in cases:
+            with self.subTest(command=command):
+                result = self.run_gg(GG_COMMAND=command)
+                self.assert_only(result, "GG-BLOQUEADO", fragment)
+                self.assertIsNone(result["dimensoes"]["10"]["operacao_efetiva"])
+
+    def test_command_targeting_unverified_repository_blocks(self) -> None:
+        subprocess.run(["git", "init", "-q", str(self.outside / "outro")], check=True)
+        cases = (
+            f"git -C {self.outside} status", f"git -C {self.outside / 'outro'} status",
+            f"git --git-dir={self.outside / 'outro' / '.git'} status",
+            f"git --work-tree={self.outside} status", "git -C inexistente status",
+        )
+        for command in cases:
+            with self.subTest(command=command):
+                self.assert_only(
+                    self.run_gg(GG_COMMAND=command), "GG-BLOQUEADO",
+                    "comando aponta para repositório não verificado",
+                )
+
+    def test_real_reads_remain_recognized(self) -> None:
+        reads = (
+            "git status", "git -C . status --short", "git -c color.ui=never log --oneline -3",
+            "git --no-pager diff --stat", "git --git-dir=.git --work-tree=. status",
+            "env LANG=C git show HEAD", "/usr/bin/git log -1", "git branch", "git branch --list",
+            "git branch -vv", "git tag", "git tag --list", "git remote -v", "git stash list",
+            "git worktree list --porcelain", "git config --get user.name", "git rev-parse HEAD",
+            "git clean -n", "git reflog", "git ls-remote origin", "git -C . -C . log -1",
+        )
+        for command in reads:
+            with self.subTest(command=command):
+                result = self.run_gg(GG_COMMAND=command)
+                self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+                self.assertEqual("read", result["dimensoes"]["10"]["operacao_efetiva"])
+
+    def test_matching_label_is_safe_and_command_is_never_executed(self) -> None:
+        cases = (
+            ("git branch gg-canary", "branch"), ("git switch -c gg-canary", "branch"),
+            ("git tag gg-canary", "branch"), ("git commit --allow-empty -m canary", "commit"),
+            ("git add AGENTS.md", "edit"), ("edit AGENTS.md", "edit"),
+            ("git fetch origin", "remote"),
+        )
+        for command, declared in cases:
+            with self.subTest(command=command):
+                result = self.run_gg(
+                    GG_OPERATION=declared, GG_COMMAND=command, GG_REMOTE_NAME="origin",
+                    GG_EXPECTED_REMOTE_SHA=self.remote_sha,
+                )
+                self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+                self.assertEqual(declared, result["dimensoes"]["10"]["operacao_efetiva"])
+        self.assertEqual(self.head, git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual("", git(self.repo, "branch", "--list", "gg-canary"))
+        self.assertEqual("", git(self.repo, "tag", "--list", "gg-canary"))
+        blocked = self.run_gg(GG_OPERATION="edit", GG_COMMAND="edit AGENTS.md; touch canary")
+        self.assertEqual("GG-BLOQUEADO", blocked["veredito"])
+        self.assertFalse((self.repo / "canary").exists())
+
+    def test_publish_matches_verified_target_without_pushing(self) -> None:
+        for command in ("git push", "git push origin deco/test", "git -C . push origin HEAD:deco/test",
+                        "git -c color.ui=never push -u origin deco/test"):
+            with self.subTest(command=command):
+                result = self.publish(command)
+                self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+                self.assertEqual("publish", result["dimensoes"]["10"]["operacao_efetiva"])
+        remote_ref = subprocess.run(
+            ["git", "--git-dir", str(self.bare), "rev-parse", "refs/heads/deco/test"],
+            check=True, text=True, capture_output=True,
+        ).stdout.strip()
+        self.assertEqual(self.remote_sha, remote_ref, "o GG não pode executar o push analisado")
+
+    def test_force_push_is_never_authorized(self) -> None:
+        for command in (
+            "git push --force", "git push -f origin deco/test", "git push --force-with-lease",
+            "git push --force-with-lease=deco/test:abc", "git push --force-if-includes",
+            "git push origin +deco/test", "git -c color.ui=never push origin +deco/test",
+            "git -C . push -uf origin deco/test", "git push origin +HEAD:deco/test",
+            "git push --forc", "git push --force-w", "git push origin deco/test --force",
+        ):
+            with self.subTest(command=command):
+                self.assert_only(self.publish(command), "GG-BLOQUEADO", "comando com force bloqueado")
+        self.assert_only(
+            self.publish("git push", GG_FORCE_PUSH="yes"), "GG-BLOQUEADO",
+            "force push nunca autorizado implicitamente",
+        )
+
+    def test_push_outside_verified_target_blocks(self) -> None:
+        cases = (
+            ("git push origin deco/test:main", "refspec de push fora do alvo verificado"),
+            ("git push origin main", "refspec de push fora do alvo verificado"),
+            ("git push --all", "escopo de push além do alvo verificado"),
+            ("git push --mirror", "escopo de push além do alvo verificado"),
+            ("git push --tags", "escopo de push além do alvo verificado"),
+            ("git push outro deco/test", "remote do push diverge do remote verificado"),
+            ("git push origin :deco/test", "não corresponde ao comando efetivo"),
+            ("git push --receive-pack=x", "opção não suportada em git push"),
+        )
+        for command, fragment in cases:
+            with self.subTest(command=command):
+                self.assert_only(self.publish(command), "GG-BLOQUEADO", fragment)
+
+    def test_explanation_never_replaces_formal_inputs(self) -> None:
+        result = self.publish("git push", GG_HUMAN_APPROVAL="sim, aprovado pelo responsável")
+        self.assertEqual("GG-BLOQUEADO", result["veredito"])
+        self.assertIn("entrada inválida: GG_HUMAN_APPROVAL", result["motivos"])
+        result = self.run_gg(GG_OPERATION="read (é só leitura)")
+        self.assertEqual("GG-BLOQUEADO", result["veredito"])
+        self.assertIn("entrada inválida: GG_OPERATION", result["motivos"])
+        self.assert_only(self.publish("git push", GG_HUMAN_APPROVAL="no"), "GG-BLOQUEADO",
+                         "aprovação humana obrigatória")
+
+    def test_each_blocking_cause_is_isolated(self) -> None:
+        self.assert_only(self.run_gg(GG_EXPECTED_HEAD="0" * 40), "GG-BLOQUEADO", "HEAD divergente")
+        self.assert_only(self.run_gg(GG_EXPECTED_UPSTREAM="origin/outro"), "GG-BLOQUEADO",
+                         "upstream divergente")
+        self.assert_only(self.run_gg(GG_EXPECTED_AHEAD="0"), "GG-BLOQUEADO", "ahead/behind divergente")
+        self.assert_only(self.run_gg(GG_CONTRADICTION="yes"), "GG-BLOQUEADO", "contradição declarada")
+        self.assert_only(self.run_gg(GG_EXPECTED_REMOTE=f"origin {str(self.bare)[:-1]}"),
+                         "GG-BLOQUEADO", "remote divergente")
+        self.assert_only(self.run_gg(GG_EXPECTED_REMOTE="origin"), "GG-BLOQUEADO", "remote divergente")
+        self.assert_only(self.publish("git push", GG_EXPECTED_REMOTE_SHA="0" * 40),
+                         "GG-BLOQUEADO", "SHA remoto ausente ou divergente")
+        self.assert_only(self.publish("git push", GG_REMOTE_NAME="outro"), "GG-BLOQUEADO",
+                         "remote do push diverge do remote verificado")
+        self.assert_only(self.run_gg(GG_OPERATION="destructive", GG_COMMAND="git reset --hard",
+                                     GG_HUMAN_APPROVAL="yes"),
+                         "GG-BLOQUEADO", "operação destrutiva requer gate próprio")
+        merge_head = Path(git(self.repo, "rev-parse", "--absolute-git-dir")) / "MERGE_HEAD"
+        merge_head.write_text(self.head + "\n", encoding="utf-8")
+        self.assert_only(self.run_gg(), "GG-BLOQUEADO", "operação Git em andamento")
+        merge_head.unlink()
+        (self.repo / "novo.txt").write_text("x\n", encoding="utf-8")
+        self.assert_only(self.run_gg(GG_DIRTY_ORIGIN="unknown"), "GG-BLOQUEADO",
+                         "worktree suja de origem desconhecida")
+        self.assert_only(self.run_gg(GG_DIRTY_ORIGIN="known", GG_PROTECTION="none"),
+                         "GG-CONDICIONAL", "proteger trabalho conhecido")
+        dirty = self.run_gg(GG_DIRTY_ORIGIN="known", GG_PROTECTION="verified")
+        self.assertEqual("GG-SEGURO", dirty["veredito"], dirty["motivos"])
+        self.assertEqual(["novo.txt"], dirty["dimensoes"]["4"]["paths_modificados_ou_nao_rastreados"])
+        (self.repo / "novo.txt").unlink()
+        git(self.repo, "checkout", "-q", "--detach", "HEAD")
+        self.assert_only(self.run_gg(GG_EXPECTED_UPSTREAM="AUSENTE"), "GG-BLOQUEADO",
+                         "branch divergente ou detached HEAD")
+        git(self.repo, "checkout", "-q", "-b", "main")
+        main = dict(GG_EXPECTED_BRANCH="main", GG_EXPECTED_UPSTREAM="AUSENTE")
+        self.assert_only(self.run_gg(**main), "GG-BLOQUEADO", "branch principal sem autorização")
+        self.assertEqual("GG-SEGURO", self.run_gg(**main, GG_MAIN_AUTH="yes")["veredito"])
+
+
 if __name__ == "__main__":
     unittest.main()

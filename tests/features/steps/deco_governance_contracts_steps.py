@@ -31,43 +31,66 @@ SCENARIO_CASES = {
     "Executor é o único aprovador disponível": ("AC-008", "test_ac008_self_approval_keeps_gate_pending"),
     "Revisor verifica a conclusão em vez de herdá-la": ("AC-009", "test_ac009_reviewer_starts_read_only_and_checks_claims"),
     "Veredito favorável sem evidência não fecha o gate": ("AC-010", "test_ac010_favorable_verdict_without_evidence_cannot_close"),
-    "Preflight precede escrita e operação sensível": ("AC-011", "test_ac011_preflight_precedes_sensitive_operations"),
-    "Mecanismo formal emite veredito prefixado": ("AC-012", "test_ac012_formal_verdict_is_prefixed_and_scope_is_explicit"),
+    "Preflight precede escrita e operação sensível": ("AC-011", (
+        "test_ac011_preflight_precedes_sensitive_operations",
+        "GitGuardianCommandTest.test_sensitive_command_never_escapes_by_declared_label",
+        "GitGuardianCommandTest.test_unknown_or_ambiguous_parsing_blocks",
+        "GitGuardianCommandTest.test_command_targeting_unverified_repository_blocks",
+        "GitGuardianCommandTest.test_matching_label_is_safe_and_command_is_never_executed",
+        "GitGuardianCommandTest.test_publish_matches_verified_target_without_pushing",
+        "GitGuardianCommandTest.test_force_push_is_never_authorized",
+        "GitGuardianCommandTest.test_push_outside_verified_target_blocks",
+    )),
+    "Mecanismo formal emite veredito prefixado": ("AC-012", (
+        "test_ac012_formal_verdict_is_prefixed_and_scope_is_explicit",
+        "GitGuardianCommandTest.test_base_environment_is_safe",
+        "GitGuardianCommandTest.test_real_reads_remain_recognized",
+        "GitGuardianCommandTest.test_explanation_never_replaces_formal_inputs",
+    )),
     "Inspeção manual não inventa veredito formal": ("AC-012", "test_ac012_manual_inspection_is_provisional_only"),
     "Condição manual exige proteção e nova inspeção": ("AC-012", "test_ac012_manual_conditional_requires_protection_and_recheck"),
-    "Condição formal exige proteção e novo preflight": ("AC-012", "test_ac012_formal_conditional_requires_protection_and_recheck"),
+    "Condição formal exige proteção e novo preflight": ("AC-012", (
+        "test_ac012_formal_conditional_requires_protection_and_recheck",
+        "GitGuardianCommandTest.test_each_blocking_cause_is_isolated",
+    )),
     "Origem desconhecida bloqueia inspeção manual": ("AC-013", "test_ac013_unknown_dirty_worktree_blocks_manual_inspection"),
-    "Origem desconhecida bloqueia mecanismo formal": ("AC-013", "test_ac013_unknown_dirty_worktree_blocks_formal_guardian"),
+    "Origem desconhecida bloqueia mecanismo formal": ("AC-013", (
+        "test_ac013_unknown_dirty_worktree_blocks_formal_guardian",
+        "test_ac012_ac013_formal_preflight_executes_fail_closed",
+    )),
 }
 
 
-def _case_for(context: object) -> str:
+def _case_for(context: object) -> tuple[str, ...]:
     scenario = context.scenario
     if scenario.name not in SCENARIO_CASES:
         raise AssertionError(f"SPEC-0002/T001: cenário não mapeado: {scenario.name}")
-    ac, method = SCENARIO_CASES[scenario.name]
+    ac, methods = SCENARIO_CASES[scenario.name]
     if ac not in scenario.tags:
         raise AssertionError(f"SPEC-0002/T001: {scenario.name} sem tag {ac}")
-    return method
+    return (methods,) if isinstance(methods, str) else methods
 
 
-def _run_contract(method: str) -> None:
+def _run_contract(methods: tuple[str, ...]) -> None:
+    """Executa o oráculo lexical e, para T004, os oráculos com Git real."""
     module_spec = importlib.util.spec_from_file_location("deco_governance_contracts_t001", TEST_FILE)
     if module_spec is None or module_spec.loader is None:
         raise AssertionError("SPEC-0002/T001: suíte unittest indisponível")
     module = importlib.util.module_from_spec(module_spec)
     module_spec.loader.exec_module(module)
-    case = module.GovernanceContractsTest(method)
-    result = unittest.TestResult()
-    case.run(result)
-    failures = [*result.failures, *result.errors]
-    if result.testsRun != 1 or failures or result.skipped:
-        details = [traceback.splitlines()[-1] for _, traceback in failures]
-        raise AssertionError(
-            f"SPEC-0002/T001/{method}: {len(result.failures)} obrigações RED, "
-            f"{len(result.errors)} erros, {len(result.skipped)} skips; "
-            + "; ".join(details[:5])
-        )
+    for method in methods:
+        class_name, _, name = method.rpartition(".")
+        case = getattr(module, class_name or "GovernanceContractsTest")(name)
+        result = unittest.TestResult()
+        case.run(result)
+        failures = [*result.failures, *result.errors]
+        if result.testsRun != 1 or failures or result.skipped:
+            details = [traceback.splitlines()[-1] for _, traceback in failures]
+            raise AssertionError(
+                f"SPEC-0002/T001/{method}: {len(result.failures)} obrigações RED, "
+                f"{len(result.errors)} erros, {len(result.skipped)} skips; "
+                + "; ".join(details[:5])
+            )
 
 
 def _given(context: object) -> None:
@@ -86,7 +109,10 @@ def _then(context: object) -> None:
     method = _case_for(context)
     if getattr(context, "deco_governance_phase", None) not in ("when", "then"):
         raise AssertionError(f"SPEC-0002/T001/{method}: When não executado")
-    _run_contract(method)
+    # O primeiro Then executa os oráculos; uma falha interrompe o cenário, então
+    # os And seguintes não precisam repetir as execuções com Git real.
+    if context.deco_governance_phase == "when":
+        _run_contract(method)
     context.deco_governance_phase = "then"
 
 

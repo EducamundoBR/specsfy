@@ -149,13 +149,39 @@ provisório. Para emitir `GG-*`, informar as variáveis `GG_EXPECTED_ROOT`,
 `GG_EXPECTED_REMOTE`, `GG_OPERATION`, `GG_DIRTY_ORIGIN`, `GG_PROTECTION`,
 `GG_WORKTREES_KNOWN`, `GG_CONTRADICTION`, `GG_HUMAN_APPROVAL` e `GG_PROFILE`,
 além de `GG_COMMAND` e `GG_TARGET` para o comando pretendido e seu alvo,
-sem segredos, com valores e proveniência no relatório. Para upstream presente, informar
+sem segredos, com valores e proveniência no relatório. `GG_EXPECTED_REMOTE` é
+`AUSENTE` ou `<nome> <URL>`, comparado exatamente com as linhas fetch e push de
+`git remote -v`, nunca por substring. Para upstream presente, informar
 `GG_EXPECTED_AHEAD` e `GG_EXPECTED_BEHIND`. Para operação de remote ou
-publicação, informar `GG_REMOTE_NAME` e `GG_EXPECTED_REMOTE_SHA`. O operador
+publicação, informar `GG_REMOTE_NAME`, igual ao nome do remote esperado, e
+`GG_EXPECTED_REMOTE_SHA`. Em `main` ou `master`, `GG_MAIN_AUTH=yes` registra a
+autorização específica; sem ela, bloqueio. O operador
 executa o bloco Python na raiz observada; saída esperada: um objeto JSON com
 exatamente um `veredito`, dezesseis dimensões, evidência dos comandos e motivos.
 Rollback: nenhum; o bloco só lê Git e arquivos de perfil. Anexar a saída
 integral ao relatório, sem segredos. A falta dela impede veredito formal.
+
+### Comando efetivo, não rótulo declarado
+
+O bloco tokeniza `GG_COMMAND` e deriva a operação efetiva sem executá-lo. O
+rótulo `GG_OPERATION` precisa coincidir com ela; explicação, comentário ou
+justificativa textual nunca substitui o token nem as entradas enumeradas.
+
+| Condição | Resultado |
+| --- | --- |
+| Opções globais `-C`, `-c`, `--git-dir`, `--work-tree` e flags neutras antes do subcomando | Normalizadas; o subcomando real é classificado. |
+| `-C`, `--git-dir` ou `--work-tree` apontam para fora da raiz verificada | `GG-BLOQUEADO`. |
+| `-c` fora da lista neutra (`user.name`, `user.email`, `color.*`, `core.quotepath`, `advice.*`), inclusive `alias.*` | `GG-BLOQUEADO`. |
+| Wrappers `env`, `command`, `nohup`, `time` e `exec` sem opções; variáveis `LANG`, `LC_*`, `TZ`, `NO_COLOR` e `TERM` | Descartados antes da classificação; outras variáveis ou opções bloqueiam. |
+| Operador de shell, redirecionamento, expansão `$` ou crase; executável desconhecido; subcomando desconhecido ou alias; opção não suportada | `GG-BLOQUEADO`: parsing ambíguo nunca é tratado como leitura. |
+| Abreviação de opção longa sensível, como `--amen` ou `--forc` | Tratada como a opção completa. |
+| `push` rotulado como outra operação; `reset --hard`, `branch -D`, `checkout -- .`, `stash drop`, `clean -f`, `commit --amend` ou `rebase` rotulados como edição | Operação efetiva divergente do rótulo; `GG-BLOQUEADO`. |
+| Push com force, `+refspec` ou lease; push fora do remote e da branch verificados; `--all`, `--mirror` ou `--tags` | `GG-BLOQUEADO`; force push nunca é autorizado implicitamente. |
+| Leitura real (`status`, `log`, `diff`, `show`, listagens de branch/tag/remote/stash/worktree, `config --get`, `clean -n`) | Operação efetiva `read`; segue a classificação das demais dimensões. |
+
+Formas declarativas sem Git (`edit <alvo>`, `write <alvo>`, `read <alvo>` e
+`deploy <alvo>`) mapeiam para a operação homônima. A dimensão 10 registra a
+operação efetiva, o executável, o subcomando e o diretório-alvo.
 
 Na raiz Git, após definir as entradas `GG_*`, executar o bloco versionado pelo
 comando abaixo. Saída esperada: exatamente um objeto JSON. Rollback: nenhum.
@@ -171,6 +197,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 
@@ -182,18 +209,20 @@ conditional = []
 cwd = pathlib.Path.cwd().resolve()
 
 
-def git(*args, timeout=12):
+def git(*args, timeout=12, where=None):
+    where = where or cwd
     try:
         result = subprocess.run(
-            ["git", *args], cwd=cwd, text=True, capture_output=True,
+            ["git", *args], cwd=where, text=True, capture_output=True,
             timeout=timeout, check=False,
         )
         out = result.stdout.strip()
         code = result.returncode
     except (OSError, subprocess.TimeoutExpired):
         out, code = "", 124
+    prefix = "git " if where == cwd else "git -C " + shlex.quote(str(where)) + " "
     evidence.append({
-        "comando": "git " + " ".join(args), "exit_code": code,
+        "comando": prefix + " ".join(args), "exit_code": code,
         "sha256_saida": hashlib.sha256(out.encode()).hexdigest(),
     })
     return code, out
@@ -214,17 +243,13 @@ expected_remote = need("GG_EXPECTED_REMOTE")
 operation = need("GG_OPERATION", {"read", "edit", "commit", "branch", "remote", "publish", "deploy", "destructive"})
 command = need("GG_COMMAND")
 target = need("GG_TARGET")
-try:
-    command_parts = shlex.split(command)
-except ValueError:
-    command_parts = []
-    block.append("comando pretendido inválido")
 dirty_origin = need("GG_DIRTY_ORIGIN", {"clean", "known", "unknown"})
 protection = need("GG_PROTECTION", {"none", "required", "verified"})
 worktrees_known = need("GG_WORKTREES_KNOWN", {"yes", "no"})
 contradiction = need("GG_CONTRADICTION", {"yes", "no"})
 approval = need("GG_HUMAN_APPROVAL", {"yes", "no"})
 profile = need("GG_PROFILE")
+expected_remote_name = "" if expected_remote == "AUSENTE" else expected_remote.partition(" ")[0]
 
 root_code, root_raw = git("rev-parse", "--show-toplevel")
 root = pathlib.Path(root_raw).resolve() if root_code == 0 else None
@@ -238,6 +263,356 @@ worktree_code, worktrees = git("worktree", "list", "--porcelain")
 stash_code, stashes = git("stash", "list")
 tag_code, tags = git("tag", "--points-at", "HEAD")
 git("status", "--branch", "--short")
+
+# Análise do comando pretendido. O comando nunca é executado: apenas tokenizado
+# e classificado. Rótulo declarado não substitui a operação efetiva; parsing
+# desconhecido ou ambíguo devolve operação None e bloqueia.
+SHELL_META = re.compile(r"[;&|<>`$\n\r]")
+ENV_ALLOWED = re.compile(r"(?:LANG|LC_[A-Z]+|TZ|NO_COLOR|TERM)=")
+CONFIG_ALLOWED = re.compile(r"(?:user\.name|user\.email|color\.[a-z.]+|core\.quotepath|advice\.[a-z]+)=", re.I)
+WRAPPERS = {"env", "command", "nohup", "time", "exec"}
+DECLARATIVE = {"read": "read", "edit": "edit", "write": "edit", "deploy": "deploy"}
+GLOBAL_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree"}
+GLOBAL_FLAGS = {"--no-pager", "-p", "--paginate", "-P", "--no-replace-objects",
+                "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs",
+                "--icase-pathspecs", "--no-optional-locks", "--no-advice"}
+READ_ONLY = {"status", "log", "diff", "show", "rev-parse", "rev-list", "ls-files", "ls-tree",
+             "cat-file", "blame", "annotate", "describe", "shortlog", "grep", "merge-base",
+             "name-rev", "for-each-ref", "show-ref", "show-branch", "count-objects",
+             "check-ignore", "check-attr", "check-ref-format", "cherry", "range-diff",
+             "whatchanged", "verify-commit", "verify-tag", "ls-remote", "diff-tree",
+             "diff-index", "diff-files", "var", "version", "help"}
+ALWAYS_DESTRUCTIVE = {"rebase", "filter-branch", "filter-repo", "update-ref", "gc", "prune", "replace"}
+b = expected_branch
+PUSH_REFSPECS = {b, "HEAD", "HEAD:" + b, b + ":" + b, "refs/heads/" + b, "HEAD:refs/heads/" + b,
+                 b + ":refs/heads/" + b, "refs/heads/" + b + ":refs/heads/" + b}
+
+
+# O Git aceita abreviações de opções longas (--amen = --amend). Todo prefixo de
+# uma opção sensível é tratado como a própria opção sensível.
+SENSITIVE_LONG = {"--hard", "--merge", "--keep", "--force", "--force-with-lease",
+                  "--force-if-includes", "--force-create", "--amend", "--delete", "--prune",
+                  "--mirror", "--all", "--branches", "--tags", "--follow-tags",
+                  "--discard-changes", "--patch", "--rebase", "--abort", "--no-verify",
+                  "--output", "--ext-diff", "--open-files-in-pager", "--upload-pack",
+                  "--receive-pack", "--exec", "--worktree", "--overlay", "--no-overlay",
+                  "--ours", "--theirs", "--pathspec-from-file", "--interactive", "--refmap"}
+
+
+def shorts(args):
+    """Normaliza flags: -fdx vira -f, -d, -x; -n5 vira -n; --opt=v vira --opt."""
+    flags = set()
+    for arg in args:
+        if re.fullmatch(r"-[A-Za-z]+", arg):
+            flags.update("-" + char for char in arg[1:])
+        elif re.fullmatch(r"-[A-Za-z]\d+", arg):
+            flags.add(arg[:2])
+        elif arg.startswith("-") and arg != "--":
+            option = arg.split("=", 1)[0]
+            flags.add(option)
+            if option.startswith("--") and len(option) > 3:
+                flags.update(name for name in SENSITIVE_LONG if name.startswith(option))
+    return flags
+
+
+def positionals(args, valued=()):
+    found, skip = [], False
+    for arg in args:
+        if arg == "--":
+            break
+        if skip:
+            skip = False
+        elif arg in valued:
+            skip = True
+        elif not arg.startswith("-"):
+            found.append(arg)
+    return found
+
+
+def unsupported(sub, option):
+    return None, ["opção não suportada em git " + sub + ": " + option]
+
+
+def remote_problem(sub, name):
+    if name is not None and name != expected_remote_name:
+        return ["remote do " + sub + " diverge do remote verificado: " + name]
+    return []
+
+
+def classify_push(rest):
+    problems, force, delete, found = [], False, False, []
+    k = 0
+    while k < len(rest):
+        arg = rest[k]
+        if arg == "--":
+            found += rest[k + 1:]
+            break
+        if not arg.startswith("-"):
+            found.append(arg)
+        elif arg in {"-o", "--push-option"}:
+            k += 1
+        elif arg.startswith("--push-option="):
+            pass
+        else:
+            given = shorts([arg])
+            forced = given & {"-f", "--force", "--force-with-lease", "--force-if-includes"}
+            deleted = given & {"-d", "--delete", "--prune"}
+            scoped = given & {"--all", "--branches", "--mirror", "--tags", "--follow-tags"}
+            force, delete = force or bool(forced), delete or bool(deleted)
+            if scoped:
+                problems.append("escopo de push além do alvo verificado: " + arg)
+            known = {"-u", "--set-upstream", "-v", "--verbose", "-q", "--quiet", "--porcelain",
+                     "--progress", "--no-progress", "--atomic", "--no-atomic", "-n", "--dry-run"}
+            if not (forced or deleted or scoped) and given - known:
+                return unsupported("push", arg)
+        k += 1
+    for spec in found[1:]:
+        if spec.startswith("+"):
+            force, spec = True, spec[1:]
+        if spec.startswith(":"):
+            delete = True
+        elif spec not in PUSH_REFSPECS:
+            problems.append("refspec de push fora do alvo verificado: " + spec)
+    problems += remote_problem("push", found[0] if found else None)
+    if delete:
+        return "destructive", problems
+    if force:
+        problems.insert(0, "comando com force bloqueado")
+    return "publish", problems
+
+
+def classify(sub, rest, where):
+    flags = shorts(rest)
+    dashdash = "--" in rest
+    pos = positionals(rest)
+    if sub in READ_ONLY:
+        for arg in rest:
+            if arg == "--":
+                break
+            if (shorts([arg]) & {"--ext-diff", "--output", "--open-files-in-pager", "--upload-pack"}
+                    or (sub == "grep" and arg.startswith("-O"))):
+                return unsupported(sub, arg)
+        return "read", []
+    if sub == "push":
+        return classify_push(rest)
+    if sub in ALWAYS_DESTRUCTIVE:
+        return "destructive", []
+    if sub in {"add", "mv", "apply", "format-patch"}:
+        return "edit", []
+    if sub == "rm":
+        return ("destructive" if flags & {"-f", "--force"} else "edit"), []
+    if sub == "commit":
+        if "--amend" in flags:
+            return "destructive", []
+        if flags & {"-n", "--no-verify"}:
+            return unsupported(sub, "--no-verify")
+        return "commit", []
+    if sub in {"merge", "cherry-pick", "revert", "am"}:
+        return ("destructive" if "--abort" in flags else "commit"), []
+    if sub == "reset":
+        if flags & {"--hard", "--merge", "--keep"}:
+            return "destructive", []
+        if flags & {"-p", "--patch"} or dashdash:
+            return "edit", []
+        extra = flags - {"-q", "--quiet", "--mixed", "--soft", "-N"}
+        if extra:
+            return unsupported(sub, sorted(extra)[0])
+        return ("edit" if pos in ([], ["HEAD"]) else "destructive"), []
+    if sub == "restore":
+        staged_only = flags & {"-S", "--staged"} and not flags & {"-W", "--worktree"}
+        return ("edit" if staged_only else "destructive"), []
+    if sub == "clean":
+        dry = flags & {"-n", "--dry-run"} and not flags & {"-f", "--force", "-i", "--interactive"}
+        return ("read" if dry else "destructive"), []
+    if sub == "checkout":
+        if (flags & {"-f", "--force", "-B", "-p", "--patch", "-m", "--merge", "--ours", "--theirs",
+                     "--overlay", "--no-overlay", "--pathspec-from-file"} or dashdash):
+            return "destructive", []
+        extra = flags - {"-q", "--quiet", "-b", "--orphan", "--detach", "-t", "--track",
+                         "--no-track", "--progress", "--no-progress", "--guess", "--no-guess"}
+        if extra:
+            return unsupported(sub, sorted(extra)[0])
+        if flags & {"-b", "--orphan"}:
+            return ("branch" if len(pos) <= 2 else "destructive"), []
+        if not pos:
+            return ("branch" if "--detach" in flags else "read"), []
+        if len(pos) == 1 and pos[0] != "." and not (where / pos[0]).exists():
+            code, _ = git("rev-parse", "--verify", "--quiet", pos[0] + "^{commit}", where=where)
+            if code == 0:
+                return "branch", []
+        return "destructive", []
+    if sub == "switch":
+        if flags & {"-C", "--force-create", "-f", "--force", "--discard-changes", "-m", "--merge"}:
+            return "destructive", []
+        extra = flags - {"-c", "--create", "--orphan", "-d", "--detach", "-q", "--quiet", "-t",
+                         "--track", "--no-track", "--guess", "--no-guess", "--progress", "--no-progress"}
+        if extra or not 1 <= len(pos) <= 2:
+            return unsupported(sub, sorted(extra)[0] if extra else "argumentos")
+        return "branch", []
+    if sub == "branch":
+        if flags & {"-D", "-f", "--force", "-M", "-C"}:
+            return "destructive", []
+        write = {"-d", "--delete", "-m", "--move", "-c", "--copy", "-u", "--set-upstream-to",
+                 "--unset-upstream", "--edit-description", "-t", "--track", "--no-track", "--create-reflog"}
+        listing = {"-l", "--list", "-a", "--all", "-r", "--remotes", "--contains", "--no-contains",
+                   "--merged", "--no-merged", "--points-at", "--show-current"}
+        display = {"-v", "--verbose", "-q", "--quiet", "--sort", "--format", "--color", "--no-color",
+                   "--column", "--no-column", "-i", "--ignore-case", "--abbrev", "--no-abbrev", "--omit-empty"}
+        extra = flags - write - listing - display
+        if extra:
+            return unsupported(sub, sorted(extra)[0])
+        names = positionals(rest, {"--sort", "--format", "--points-at", "-u", "--set-upstream-to"})
+        if flags & write or (names and not flags & listing):
+            return "branch", []
+        return "read", []
+    if sub == "tag":
+        if flags & {"-d", "--delete", "-f", "--force"}:
+            return "destructive", []
+        listing = {"-l", "--list", "-n", "--contains", "--no-contains", "--merged", "--no-merged",
+                   "--points-at", "-v", "--verify"}
+        display = {"--sort", "--format", "--color", "--column", "--no-column", "-i", "--ignore-case", "--omit-empty"}
+        create = {"-a", "--annotate", "-s", "--sign", "--no-sign", "-m", "--message", "-F", "--file",
+                  "-u", "--local-user", "-e", "--edit", "--cleanup", "--create-reflog"}
+        extra = flags - listing - display - create
+        if extra:
+            return unsupported(sub, sorted(extra)[0])
+        names = positionals(rest, {"-m", "--message", "-F", "--file", "-u", "--local-user", "--sort",
+                                   "--format", "--points-at", "--cleanup"})
+        if flags & create or (names and not flags & listing):
+            return "branch", []
+        return "read", []
+    if sub == "stash":
+        action = rest[0] if rest and not rest[0].startswith("-") else "push"
+        mapped = {"list": "read", "show": "read", "drop": "destructive", "clear": "destructive",
+                  "push": "edit", "save": "edit", "apply": "edit", "pop": "edit", "branch": "branch",
+                  "create": "edit", "store": "edit"}.get(action)
+        return (mapped, []) if mapped else unsupported(sub, action)
+    if sub == "worktree":
+        action = pos[0] if pos else ""
+        mapped = {"list": "read", "add": "branch", "remove": "destructive", "prune": "destructive",
+                  "lock": "edit", "unlock": "edit", "move": "edit", "repair": "edit"}.get(action)
+        return (mapped, []) if mapped else unsupported(sub, action or "sem ação")
+    if sub == "remote":
+        if not pos:
+            extra = flags - {"-v", "--verbose"}
+            return unsupported(sub, sorted(extra)[0]) if extra else ("read", [])
+        mapped = {"show": "read", "get-url": "read", "add": "remote", "rename": "remote",
+                  "set-url": "remote", "set-head": "remote", "set-branches": "remote",
+                  "update": "remote", "prune": "remote", "remove": "destructive",
+                  "rm": "destructive"}.get(pos[0])
+        return (mapped, []) if mapped else unsupported(sub, pos[0])
+    if sub == "config":
+        getters = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list",
+                   "--get-color", "--get-colorbool"}
+        neutral = {"--global", "--local", "--system", "--worktree", "--show-origin", "--show-scope",
+                   "--null", "-z", "--name-only", "--includes", "--no-includes", "--bool", "--int", "--path"}
+        if not flags - getters - neutral and (flags & getters or pos[:1] in (["get"], ["list"]) or len(pos) == 1):
+            return "read", []
+        return None, ["escrita de configuração Git exige classificação humana"]
+    if sub == "reflog":
+        mapped = {"show": "read", "exists": "read", "expire": "destructive",
+                  "delete": "destructive"}.get(pos[0] if pos else "show")
+        return (mapped, []) if mapped else unsupported(sub, pos[0])
+    if sub == "symbolic-ref":
+        if flags <= {"-q", "--quiet", "--short"} and len(pos) == 1:
+            return "read", []
+        return None, ["escrita de configuração Git exige classificação humana"]
+    if sub in {"fetch", "pull"}:
+        for arg in rest:
+            if shorts([arg]) & {"--upload-pack", "--refmap", "--exec"}:
+                return unsupported(sub, arg)
+        if (flags & {"-f", "--force", "-r", "--rebase"}
+                or any(spec.startswith("+") or ":" in spec for spec in pos[1:])):
+            return "destructive", []
+        return "remote", remote_problem(sub, pos[0] if pos else None)
+    return None, []
+
+
+def analyze(text):
+    """Deriva a operação efetiva sem executar o comando; ambiguidade bloqueia."""
+    detail = {"operacao_efetiva": None, "executavel": None, "subcomando": None, "diretorio_alvo": None}
+    if SHELL_META.search(text):
+        return detail, ["comando composto, redirecionado ou com expansão de shell"]
+    try:
+        parts = shlex.split(text)
+    except ValueError:
+        return detail, ["comando pretendido inválido"]
+    i = 0
+    while i < len(parts):
+        word = parts[i]
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word, re.S):
+            if not ENV_ALLOWED.match(word):
+                return detail, ["variável de ambiente não permitida: " + word.split("=", 1)[0]]
+        elif word in WRAPPERS:
+            if i + 1 < len(parts) and parts[i + 1].startswith("-"):
+                return detail, ["wrapper com opção não suportada: " + word + " " + parts[i + 1]]
+        else:
+            break
+        i += 1
+    if i >= len(parts):
+        return detail, ["comando pretendido inválido"]
+    exe, args = parts[i], parts[i + 1:]
+    detail["executavel"] = exe
+    if exe in DECLARATIVE and args and not any(arg.startswith("-") for arg in args):
+        detail["operacao_efetiva"] = DECLARATIVE[exe]
+        return detail, []
+    if pathlib.PurePosixPath(exe).name not in {"git", "git.exe"}:
+        return detail, ["executável não reconhecido: " + exe]
+    where, git_dir, work_tree, j = cwd, None, None, 0
+    while j < len(args) and args[j].startswith("-"):
+        option, has_value, value = args[j].partition("=")
+        if option in {"--git-dir", "--work-tree"} and has_value:
+            j += 1
+        elif args[j] in GLOBAL_WITH_VALUE:
+            if j + 1 >= len(args):
+                return detail, ["opção global do Git sem valor: " + args[j]]
+            option, value = args[j], args[j + 1]
+            j += 2
+        elif args[j] in GLOBAL_FLAGS:
+            j += 1
+            continue
+        elif args[j] in {"--version", "-v", "--help", "-h"}:
+            detail["operacao_efetiva"] = "read"
+            return detail, []
+        else:
+            return detail, ["opção global do Git desconhecida: " + args[j]]
+        if option == "-C":
+            where = (where / value).resolve() if value else where
+        elif option == "-c" and not CONFIG_ALLOWED.match(value):
+            return detail, ["configuração -c não permitida: " + value.split("=", 1)[0]]
+        elif option == "--git-dir":
+            git_dir = value
+        elif option == "--work-tree":
+            work_tree = value
+    detail["diretorio_alvo"] = str(where)
+    same = root is not None and where.is_dir()
+    if same and git_dir is None and where != cwd:
+        code, top = git("rev-parse", "--show-toplevel", where=where)
+        same = code == 0 and pathlib.Path(top).resolve() == root
+    if same and git_dir is not None:
+        code, absolute = git("rev-parse", "--absolute-git-dir")
+        same = (code == 0 and (where / git_dir).resolve() == pathlib.Path(absolute).resolve()
+                and (work_tree is not None or where == root))
+    if same and work_tree is not None:
+        same = (where / work_tree).resolve() == root
+    if not same:
+        return detail, ["comando aponta para repositório não verificado"]
+    if j >= len(args):
+        return detail, ["git sem subcomando"]
+    detail["subcomando"] = args[j]
+    effective, problems = classify(args[j], args[j + 1:], where)
+    if effective is None and not problems:
+        problems = ["subcomando Git desconhecido ou alias: " + args[j]]
+    detail["operacao_efetiva"] = effective
+    return detail, problems
+
+
+command_detail, command_problems = analyze(command) if command else (
+    {"operacao_efetiva": None, "executavel": None, "subcomando": None, "diretorio_alvo": None}, [])
+block.extend(command_problems)
+effective = command_detail["operacao_efetiva"]
+if effective is not None and operation and effective != operation:
+    block.append("operação declarada (" + operation + ") não corresponde ao comando efetivo (" + effective + ")")
 
 for name, code in (("raiz", root_code), ("branch", branch_code),
                    ("HEAD", head_code), ("working tree", status_code),
@@ -278,19 +653,33 @@ if upstream != "AUSENTE":
 elif operation in {"remote", "publish"}:
     block.append("upstream ausente para operação remota")
 
-remote_present = bool(remotes)
+# Comparação exata: GG_EXPECTED_REMOTE é "<nome> <URL>" e precisa coincidir
+# com as linhas fetch e push de `git remote -v`, nunca por substring.
+remote_table = {}
+for line in remotes.splitlines():
+    name, _, rest = line.partition("\t")
+    url, _, kind = rest.rpartition(" ")
+    remote_table.setdefault(name, {})[kind.strip("()")] = url
 if expected_remote == "AUSENTE":
-    if remote_present:
+    remote_ok = not remote_table
+    if not remote_ok:
         block.append("remote inesperado")
-elif expected_remote not in remotes:
-    block.append("remote divergente")
+else:
+    expected_url = expected_remote.partition(" ")[2]
+    remote_ok = bool(expected_url) and remote_table.get(expected_remote_name) == {
+        "fetch": expected_url, "push": expected_url}
+    if not remote_ok:
+        block.append("remote divergente")
 if operation in {"remote", "publish"}:
     remote_name = need("GG_REMOTE_NAME")
     remote_sha = need("GG_EXPECTED_REMOTE_SHA")
-    ref = "refs/heads/" + expected_branch
-    remote_sha_code, observed_remote = git("ls-remote", remote_name, ref, timeout=12)
-    if remote_sha_code != 0 or not observed_remote or not observed_remote.startswith(remote_sha + "\t"):
-        block.append("SHA remoto ausente ou divergente")
+    remote_mismatch = remote_problem("push" if operation == "publish" else "fetch", remote_name or None)
+    block.extend(remote_mismatch)
+    if remote_name and remote_sha and not remote_mismatch:
+        ref = "refs/heads/" + expected_branch
+        remote_sha_code, observed_remote = git("ls-remote", remote_name, ref, timeout=12)
+        if remote_sha_code != 0 or not observed_remote or not observed_remote.startswith(remote_sha + "\t"):
+            block.append("SHA remoto ausente ou divergente")
 
 state_paths = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD",
                "rebase-merge", "rebase-apply")
@@ -321,28 +710,22 @@ if operation == "destructive":
     block.append("operação destrutiva requer gate próprio; sem autorização implícita")
 if e.get("GG_FORCE_PUSH") == "yes":
     block.append("force push nunca autorizado implicitamente")
-if any(part in {"-f", "--force", "--force-with-lease"}
-       or part.startswith(("--force=", "--force-with-lease="))
-       for part in command_parts) or (len(command_parts) > 2 and command_parts[0:2] == ["git", "push"]
-                                    and any(part.startswith("+") for part in command_parts[2:])):
-    block.append("comando com force bloqueado")
-if command_parts[0:2] == ["git", "push"] and operation != "publish":
-    block.append("push declarado como outra operação")
-if operation == "publish" and command_parts[0:2] != ["git", "push"]:
-    block.append("operação declarada não corresponde ao comando")
 
 verdict = "GG-BLOQUEADO" if block else "GG-CONDICIONAL" if conditional else "GG-SEGURO"
+dirty_paths = [line[3:].split(" -> ")[-1] for line in status.splitlines() if len(line) > 3]
+stage_paths = [line.split("\t")[-1] for line in stage.splitlines() if "\t" in line]
 dimensions = {
     "1": {"pasta": str(cwd), "raiz": str(root) if root else "NÃO VERIFICADO"},
     "2": {"branch": branch, "HEAD": head},
     "3": {"working_tree_suja": dirty},
-    "4": {"stage_sujo": bool(stage), "modificados_ou_nao_rastreados": dirty},
+    "4": {"stage_sujo": bool(stage), "paths_stage": stage_paths,
+          "modificados_ou_nao_rastreados": dirty, "paths_modificados_ou_nao_rastreados": dirty_paths},
     "5": {"upstream": upstream, "ahead": ahead, "behind": behind},
-    "6": {"remote_corresponde": expected_remote == "AUSENTE" and not remote_present or expected_remote in remotes},
+    "6": {"remote_corresponde": remote_ok, "remotes": sorted(remote_table)},
     "7": {"worktrees": worktree_count, "origem_conhecida": worktrees_known == "yes"},
     "8": {"stashes": len(stashes.splitlines()) if stashes else 0},
     "9": {"tags_no_HEAD": len(tags.splitlines()) if tags else 0},
-    "10": {"operacao": operation, "comando": command, "alvo": target},
+    "10": {"operacao": operation, "comando": command, "alvo": target, **command_detail},
     "11": {"perfil_presente": pathlib.Path(profile).is_file()},
     "12": {"contradicao": contradiction},
     "13": {"protecao": protection},
