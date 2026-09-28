@@ -175,12 +175,12 @@ justificativa textual nunca substitui o token nem as entradas enumeradas.
 | Wrappers `env`, `command`, `nohup`, `time` e `exec` sem opções; variáveis `LANG`, `LC_*`, `TZ`, `NO_COLOR` e `TERM` | Descartados antes da classificação; outras variáveis ou opções bloqueiam. |
 | Operador de shell, redirecionamento, expansão `$` ou crase; executável desconhecido; subcomando desconhecido ou alias; opção não suportada | `GG-BLOQUEADO`: parsing ambíguo nunca é tratado como leitura. |
 | Abreviação de opção longa sensível, como `--amen` ou `--forc` | Tratada como a opção completa. |
-| `push` rotulado como outra operação; `reset --hard`, `branch -D` ou `-d`, `checkout -- .`, `stash drop` ou `pop`, `remote prune`, `clean -f`, `commit --amend` ou `rebase` rotulados como edição | Remoção ou reescrita tem operação efetiva `destructive`, divergente do rótulo; `GG-BLOQUEADO`. |
-| `remote add`, `rename`, `set-url`, `set-head` ou `set-branches` | Mutação de remote: exige `GG_HUMAN_APPROVAL=yes`; `fetch` não exige. |
-| Paths efetivos de `add`, `rm`, `mv`, `commit`, `restore --staged`, `reset -- <path>` e `edit <alvo>` | Precisam ficar dentro de `GG_TARGET`, que aceita vários alvos separados por espaço. |
-| Escopo amplo (`add -A`, `add -u`, `add .`, `commit -a`, `merge`, `apply`, `stash`, `reset` sem path) | Exige `GG_TARGET=.`; caso contrário, `GG-BLOQUEADO`. |
+| `push` rotulado como outra operação; `reset --hard`, `branch -D` ou `-d`, `checkout -- .`, `stash drop` ou `pop`, `remote prune`, `fetch`/`pull`/`remote update` com `--prune` ou `--prune-tags`, `clean -f`, `commit --amend` ou `rebase` rotulados como edição | Remoção ou reescrita tem operação efetiva `destructive`, divergente do rótulo; `GG-BLOQUEADO`. |
+| `remote add`, `rename`, `set-url`, `set-head` ou `set-branches` | Mutação de remote: exige `GG_HUMAN_APPROVAL=yes` e nomes de remote presentes em `GG_TARGET`; `fetch` não exige aprovação; `remote prune --dry-run` é leitura. |
+| Paths efetivos de `add`, `rm`, `mv`, `commit`, `restore --staged`, `reset -- <path>` e `edit <alvo>`; em `commit` sem pathspec, todos os paths já staged | Precisam ficar dentro de `GG_TARGET`, que aceita vários alvos separados por espaço. |
+| Escopo amplo (`add -A`, `add -u`, `add .`, `add -p` sem path, `--pathspec-from-file`, `commit -a`, `commit -p`, `merge`, `apply`, `stash`, `reset` sem path) | Exige `GG_TARGET=.`; caso contrário, `GG-BLOQUEADO`. |
 | Nome de branch ou tag criado, trocado ou renomeado | Precisa coincidir literalmente com um item de `GG_TARGET`. |
-| `main` ou `master` sem `GG_MAIN_AUTH=yes` | Somente `git switch -c <branch>` ou `git checkout -b <branch>`, declarados como `branch`, podem prosseguir; qualquer outra operação bloqueia. |
+| `main` ou `master` sem `GG_MAIN_AUTH=yes` | Somente leitura real e `git switch -c <branch>` ou `git checkout -b <branch>` a partir do HEAD observado, declarados como `branch`, podem prosseguir; qualquer outra operação ou ponto de partida bloqueia. |
 | Push com force, `+refspec` ou lease; push fora do remote e da branch verificados; `--all`, `--mirror` ou `--tags` | `GG-BLOQUEADO`; force push nunca é autorizado implicitamente. |
 | Leitura real (`status`, `log`, `diff`, `show`, listagens de branch/tag/remote/stash/worktree, `config --get`, `clean -n`) | Operação efetiva `read`; segue a classificação das demais dimensões. |
 
@@ -270,6 +270,8 @@ worktree_code, worktrees = git("worktree", "list", "--porcelain")
 stash_code, stashes = git("stash", "list")
 tag_code, tags = git("tag", "--points-at", "HEAD")
 git("status", "--branch", "--short")
+# Paths já staged: um commit sem pathspec inclui todos eles.
+staged_paths = [part for line in stage.splitlines() for part in line.split("\t")[1:]]
 
 # Análise do comando pretendido. O comando nunca é executado: apenas tokenizado
 # e classificado. Rótulo declarado não substitui a operação efetiva; parsing
@@ -303,7 +305,8 @@ SENSITIVE_LONG = {"--hard", "--merge", "--keep", "--force", "--force-with-lease"
                   "--discard-changes", "--patch", "--rebase", "--abort", "--no-verify",
                   "--output", "--ext-diff", "--open-files-in-pager", "--upload-pack",
                   "--receive-pack", "--exec", "--worktree", "--overlay", "--no-overlay",
-                  "--ours", "--theirs", "--pathspec-from-file", "--interactive", "--refmap"}
+                  "--ours", "--theirs", "--pathspec-from-file", "--interactive", "--refmap",
+                  "--prune-tags"}
 
 
 def shorts(args):
@@ -410,10 +413,17 @@ def classify_push(rest):
     return "publish", problems
 
 
+def safe_start(start):
+    """Ponto de partida de branch nova: ausente ou o próprio HEAD observado."""
+    return start is None or start in {"HEAD", head, branch}
+
+
 def classify(sub, rest, where):
     flags = shorts(rest)
     dashdash = "--" in rest
     pos = positionals(rest)
+    if "--pathspec-from-file" in flags:
+        bind(broad="--pathspec-from-file")
     if sub in READ_ONLY:
         for arg in rest:
             if arg == "--":
@@ -429,8 +439,11 @@ def classify(sub, rest, where):
     if sub in {"add", "mv", "rm"}:
         if sub == "rm" and flags & {"-f", "--force"}:
             return "destructive", []
+        paths = pathspecs(rest, {"--chmod", "--pathspec-from-file"})
         broad = sorted(flags & {"-A", "--all", "-u", "--update"}) if sub == "add" else []
-        bind(pathspecs(rest, {"--chmod", "--pathspec-from-file"}), broad=broad[0] if broad else None)
+        if sub == "add" and not paths and flags & {"-p", "--patch", "-i", "--interactive", "-e", "--edit"}:
+            broad = broad or ["--patch"]
+        bind(paths, broad=broad[0] if broad else None)
         return "edit", []
     if sub in {"apply", "format-patch"}:
         bind(broad=sub)
@@ -442,8 +455,11 @@ def classify(sub, rest, where):
             return unsupported(sub, "--no-verify")
         valued = {"-m", "--message", "-F", "--file", "-C", "--reuse-message", "-c", "--reedit-message",
                   "--author", "--date", "--fixup", "--squash", "-t", "--template", "--trailer", "--cleanup"}
-        broad = sorted(flags & {"-a", "--all"})
-        bind(pathspecs(rest, valued), broad=broad[0] if broad else None)
+        broad = sorted(flags & {"-a", "--all", "-p", "--patch", "--interactive"})
+        paths = pathspecs(rest, valued | {"--pathspec-from-file"})
+        bind(paths, broad=broad[0] if broad else None)
+        if not paths or flags & {"-i", "--include"}:
+            bind(staged_paths)
         return "commit", []
     if sub in {"merge", "cherry-pick", "revert", "am"}:
         bind(broad=sub)
@@ -466,7 +482,7 @@ def classify(sub, rest, where):
     if sub == "restore":
         staged_only = flags & {"-S", "--staged"} and not flags & {"-W", "--worktree"}
         if staged_only:
-            bind(pathspecs(rest, {"-s", "--source"}))
+            bind(pathspecs(rest, {"-s", "--source", "--pathspec-from-file"}))
             return "edit", []
         return "destructive", []
     if sub == "clean":
@@ -484,7 +500,7 @@ def classify(sub, rest, where):
             if len(pos) > 2:
                 return "destructive", []
             bind(names=pos[:1])
-            scope["cria_branch"] = "-b" in flags
+            scope["cria_branch"] = "-b" in flags and safe_start(pos[1] if len(pos) > 1 else None)
             return "branch", []
         if not pos:
             return ("branch" if "--detach" in flags else "read"), []
@@ -502,7 +518,7 @@ def classify(sub, rest, where):
         if extra or not 1 <= len(pos) <= 2:
             return unsupported(sub, sorted(extra)[0] if extra else "argumentos")
         bind(names=pos[:1])
-        scope["cria_branch"] = bool(flags & {"-c", "--create"})
+        scope["cria_branch"] = bool(flags & {"-c", "--create"}) and safe_start(pos[1] if len(pos) > 1 else None)
         return "branch", []
     if sub == "branch":
         if flags & {"-D", "-f", "--force", "-M", "-C", "-d", "--delete"}:
@@ -564,7 +580,13 @@ def classify(sub, rest, where):
                   "set-url": "remote", "set-head": "remote", "set-branches": "remote",
                   "update": "remote", "prune": "destructive", "remove": "destructive",
                   "rm": "destructive"}.get(pos[0])
+        if pos[0] == "prune" and flags & {"-n", "--dry-run"}:
+            mapped = "read"
+        if pos[0] == "update" and flags & {"-p", "--prune"}:
+            mapped = "destructive"
         scope["altera_remote"] = pos[0] in {"add", "rename", "set-url", "set-head", "set-branches"}
+        if scope["altera_remote"]:
+            bind(names=pos[1:3] if pos[0] == "rename" else pos[1:2])
         return (mapped, []) if mapped else unsupported(sub, pos[0])
     if sub == "config":
         getters = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "-l", "--list",
@@ -586,7 +608,7 @@ def classify(sub, rest, where):
         for arg in rest:
             if shorts([arg]) & {"--upload-pack", "--refmap", "--exec"}:
                 return unsupported(sub, arg)
-        if (flags & {"-f", "--force", "-r", "--rebase"}
+        if (flags & {"-f", "--force", "-r", "--rebase", "-p", "--prune", "-P", "--prune-tags"}
                 or any(spec.startswith("+") or ":" in spec for spec in pos[1:])):
             return "destructive", []
         return "remote", remote_problem(sub, pos[0] if pos else None)
@@ -684,7 +706,7 @@ if scope["altera_remote"] and approval != "yes":
     block.append("aprovação humana obrigatória para alterar remote")
 # GG_TARGET delimita escrita local: paths efetivos ficam dentro do alvo
 # declarado, nomes de branch/tag coincidem literalmente e escopo amplo exige ".".
-if effective in {"edit", "commit", "branch"} and target:
+if (effective in {"edit", "commit", "branch"} or scope["altera_remote"]) and target:
     try:
         targets = shlex.split(target)
     except ValueError:
@@ -717,7 +739,8 @@ if branch_code != 0 or not branch or branch != expected_branch:
 if head_code != 0 or head != expected_head:
     block.append("HEAD divergente")
 creating_safe_branch = scope["cria_branch"] and operation == "branch" and effective == "branch"
-if branch in {"main", "master"} and e.get("GG_MAIN_AUTH") != "yes" and not creating_safe_branch:
+reading = operation == "read" and effective == "read"
+if branch in {"main", "master"} and e.get("GG_MAIN_AUTH") != "yes" and not (creating_safe_branch or reading):
     block.append("branch principal sem autorização")
 if not pathlib.Path(profile).is_file() or root is None or not pathlib.Path(profile).resolve().is_relative_to(root):
     block.append("perfil do repositório ausente")
