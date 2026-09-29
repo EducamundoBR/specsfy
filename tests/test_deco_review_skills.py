@@ -407,6 +407,8 @@ def write_unlock_problems(case: Path) -> list[str]:
             problems.append("artefatos do plano fora do contrato de T006")
         elif not same_unit:
             problems.append("revisão do plano não corresponde à unidade")
+        elif any(severity in {"P0", "P1"} for severity, _ in findings(verdict_text)):
+            problems.append("Verdict APROVADO com achado P0 ou P1")
     if risk == "CRÍTICO":
         gate = case / "gate-humano.md"
         values = verdict_fields(gate.read_text(encoding="utf-8")) if gate.is_file() else {}
@@ -414,6 +416,8 @@ def write_unlock_problems(case: Path) -> list[str]:
             problems.append("gate humano ausente")
         elif values.get("Decisão humana") != "APROVADA" or not values.get("Pessoa") or not values.get("Data"):
             problems.append("gate humano incompleto")
+        elif values["Pessoa"].upper().startswith(("NÃO REGISTRADO", "<PREENCHER>")):
+            problems.append("gate humano sem pessoa registrada")
     return problems
 
 
@@ -511,6 +515,16 @@ class ReviewHandoffTest(unittest.TestCase):
                 case = ROOT / WRITE_UNLOCK / name
                 self.assertTrue(case.is_dir(), f"fixture ausente: {name}")
                 self.assertEqual(expected, write_unlock_problems(case))
+
+    def test_approved_verdict_with_blocking_finding_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1"
+        self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p1")
+        self.assertEqual(["Verdict APROVADO com achado P0 ou P1"], write_unlock_problems(case))
+
+    def test_critical_gate_without_registered_person_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "critico-gate-sem-pessoa"
+        self.assertTrue(case.is_dir(), "fixture ausente: critico-gate-sem-pessoa")
+        self.assertEqual(["gate humano sem pessoa registrada"], write_unlock_problems(case))
 
     def test_plan_gate_addendum_is_recorded_without_rewriting_history(self) -> None:
         spec = (ROOT / "deco/specs/0002-governanca-sdd/spec.md").read_text(encoding="utf-8")
