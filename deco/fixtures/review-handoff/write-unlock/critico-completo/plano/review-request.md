@@ -2,10 +2,10 @@
 
 Fixture sintética de T006; sem dados reais.
 
-- **Unidade**: SPEC-9999/T999 — fixture sintética de rodada
-- **Risco**: médio
+- **Unidade**: SPEC-9999 — plano da página de boas-vindas
+- **Risco**: crítico
 - **Justificativa**: altera contrato de governança sem código de produto
-- **Gate**: Delivery
+- **Gate**: Plan
 - **Perfil**: governança
 - **Branch**: fixture/rodada
 - **HEAD**: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

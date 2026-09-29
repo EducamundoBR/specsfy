@@ -133,6 +133,8 @@ ausente, incompleta ou contraditória mantém a escrita bloqueada.
 | Rodada do plano e Verdict do plano ambos `APROVADO` (risco alto) | Liberar a escrita. |
 | Verdict do plano com `CORREÇÕES SOLICITADAS` ou `REPROVADO` | Bloquear a escrita até nova revisão aprovada. |
 | Estado da rodada e veredito do plano divergentes | Bloquear: evidência contraditória. |
+| Review Request ou Verdict do plano de outra unidade, de outro risco ou de gate diferente do Plan Gate | Bloquear: a revisão não corresponde à unidade que será escrita. |
+| Request ou Verdict do plano fora dos contratos de T006, inclusive base observada divergente ou proveniência `NÃO REGISTRADO` | Bloquear a escrita. |
 | Risco crítico sem gate humano registrado, ou sem decisão, pessoa ou data | Bloquear a escrita mesmo com o plano aprovado. |
 | Resultado de risco alto sem Review Request próprio depois da escrita | Recusar o fechamento; gravar o pedido do resultado. |
 | Um único Review Request cobrindo plano e resultado | Recusar; separar em dois artefatos. |

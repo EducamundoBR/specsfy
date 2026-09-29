@@ -366,7 +366,8 @@ def t006_rounds_module():
 def write_unlock_problems(case: Path) -> list[str]:
     """Regra de AC-035/FR-002: escrita de risco alto só após o plano revisado e aprovado."""
     unit = case / "unidade.md"
-    risk = verdict_fields(unit.read_text(encoding="utf-8")).get("Risco", "") if unit.is_file() else ""
+    unit_fields = verdict_fields(unit.read_text(encoding="utf-8")) if unit.is_file() else {}
+    risk = unit_fields.get("Risco", "")
     if risk not in {"ALTO", "CRÍTICO"}:
         return ["risco ausente ou fora de alto e crítico"]
     plan = case / "plano"
@@ -396,8 +397,16 @@ def write_unlock_problems(case: Path) -> list[str]:
             )
             for template, text in ((rounds.REVIEW_REQUEST, request_text), (rounds.REVIEW_VERDICT, verdict_text))
         ]
+        requested, reviewed = verdict_fields(request_text), verdict_fields(verdict_text)
+        same_unit = (
+            requested.get("Unidade") == unit_fields.get("Unidade") == reviewed.get("Unidade")
+            and requested.get("Risco", "").upper() == risk
+            and re.fullmatch(r"(?i)plan(?: gate)?", requested.get("Gate", "")) is not None
+        )
         if not observed or any(checks) or verdict_problems(verdict_text):
             problems.append("artefatos do plano fora do contrato de T006")
+        elif not same_unit:
+            problems.append("revisão do plano não corresponde à unidade")
     if risk == "CRÍTICO":
         gate = case / "gate-humano.md"
         values = verdict_fields(gate.read_text(encoding="utf-8")) if gate.is_file() else {}
@@ -487,6 +496,9 @@ class ReviewHandoffTest(unittest.TestCase):
             "alto-verdict-nao-registrado": ["artefatos do plano fora do contrato de T006"],
             "alto-mesma-sessao": ["artefatos do plano fora do contrato de T006"],
             "alto-branch-divergente": ["artefatos do plano fora do contrato de T006"],
+            "alto-unidade-divergente": ["revisão do plano não corresponde à unidade"],
+            "alto-risco-divergente": ["revisão do plano não corresponde à unidade"],
+            "alto-gate-divergente": ["revisão do plano não corresponde à unidade"],
             "alto-plano-correcoes": ["plano não aprovado"],
             "alto-contraditorio": ["evidência contraditória"],
             "critico-sem-gate": ["gate humano ausente"],

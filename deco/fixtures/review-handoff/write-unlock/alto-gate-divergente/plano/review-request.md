@@ -5,9 +5,9 @@ Fixture sintética de T006; sem dados reais.
 - **Unidade**: SPEC-9999 — plano da página de boas-vindas
 - **Risco**: alto
 - **Justificativa**: altera contrato de governança sem código de produto
-- **Gate**: Plan
+- **Gate**: Delivery
 - **Perfil**: governança
-- **Branch**: fixture/outra
+- **Branch**: fixture/rodada
 - **HEAD**: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 - **Base**: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 - **Escopo do diff**: bbbbbbb..aaaaaaa

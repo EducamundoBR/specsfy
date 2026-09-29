@@ -2,7 +2,7 @@
 
 Fixture sintética de SPEC-0002; sem dados reais.
 
-- **Unidade**: SPEC-9999 — plano integrado
+- **Unidade**: SPEC-9999 — plano da página de boas-vindas
 - **CURRENT**: reviews/rodada-1
 - **Review Request**: reviews/rodada-1/review-request.md
 - **Base e HEAD observados**: bbbbbbb / aaaaaaa
