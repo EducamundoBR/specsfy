@@ -191,6 +191,29 @@ Formas declarativas sem Git (`edit <alvo>`, `write <alvo>`, `read <alvo>` e
 `deploy <alvo>`) mapeiam para a operação homônima. A dimensão 10 registra a
 operação efetiva, o executável, o subcomando e o diretório-alvo.
 
+### Perfil fechado `miguel-day1`
+
+`GG_MODE=miguel-day1` troca a análise geral por uma allowlist fechada,
+comparada pelo argv completo. Não há prefixo, substring nem abreviação; o que
+não coincidir exatamente com uma forma abaixo é `GG-BLOQUEADO`. As demais
+dimensões continuam valendo. `GG_TARGET` precisa ser a raiz (`.` ou o caminho
+absoluto dela); `GG_MAIN_AUTH` é ignorado; outro valor de `GG_MODE` bloqueia.
+
+| Condição | Resultado |
+| --- | --- |
+| `git status`, `git status --short`, `git diff`, `git diff --cached`, `git rev-parse HEAD`, `git rev-parse --show-toplevel`, `git rev-parse --abbrev-ref HEAD`, `git branch --show-current`, `git worktree list`, `git ls-files` | Leitura; `GG-SEGURO` se as dimensões passarem. |
+| `git log` com somente `--oneline`, `--stat`, `--graph`, `--decorate` e `-n <1-999>`, sem repetição | Leitura. |
+| `git show <ref>` ou `git show --stat <ref>`, com `HEAD`, `HEAD~N` ou SHA hexadecimal que resolva para commit | Leitura. |
+| `git switch -c piloto/<slug>` (minúsculas, dígitos e hífens; branch inexistente; sem ponto de partida) | Branch local; única escrita liberada em `main`/`master`. |
+| `git add -- <path>...` com paths existentes ou rastreados, dentro da raiz após resolver symlinks, fora de `.git`, sem `.`, glob, `:` mágico, `@`, hífen inicial ou path vazio | Edição local. |
+| `git commit -m <mensagem não vazia>` com stage não vazio, `git diff --cached --check` verde e `GG_STAGE_SHA256` igual ao hash do diff staged inspecionado | Nunca `GG-SEGURO`: no máximo `GG-CONDICIONAL`, que exige aprovação de Deco. A saída traz `stage_evidencia` (arquivos, numstat, check e hash). |
+| `git push` em qualquer forma, mesmo com aprovação declarada | `GG-BLOQUEADO`; a publicação é um procedimento separado com autorização humana, novo GG, destino e SHA. |
+| Qualquer outro comando, opção, wrapper, executável absoluto, opção global, composição, redirecionamento, subshell, substituição, comentário ou quebra de linha | `GG-BLOQUEADO`. |
+
+Para o commit, inspecionar `git diff --cached` e registrar o `sha256_diff` de
+`stage_evidencia`; repetir o GG com `GG_STAGE_SHA256` imediatamente antes do
+commit. Se algo entrar no stage depois da inspeção, o hash diverge e bloqueia.
+
 Na raiz Git, após definir as entradas `GG_*`, executar o bloco versionado pelo
 comando abaixo. Em projeto consumidor sem a camada instalada, `GG_SKILL` aponta
 o caminho absoluto deste arquivo; o bloco continua lendo o Git do diretório
@@ -729,8 +752,131 @@ def analyze(text):
     return detail, problems
 
 
-command_detail, command_problems = analyze(command) if command else (
-    {"operacao_efetiva": None, "executavel": None, "subcomando": None, "diretorio_alvo": None}, [])
+# Perfil miguel-day1 (GG_MODE=miguel-day1): allowlist fechada comparada por argv.
+# Não há prefixo, substring nem "comando reconhecido = seguro": o que não
+# coincidir exatamente com uma forma abaixo devolve operação None e bloqueia.
+mode = e.get("GG_MODE", "").strip()
+day1 = mode == "miguel-day1"
+if mode not in {"", "miguel-day1"}:
+    block.append("modo do Git Guardian desconhecido: " + mode)
+DAY1_OUT = "comando fora da allowlist miguel-day1"
+DAY1_META = re.compile(r"[;&|<>`$\\(){}#\n\r]")
+DAY1_READ = {("status",), ("status", "--short"), ("diff",), ("diff", "--cached"),
+             ("rev-parse", "HEAD"), ("rev-parse", "--show-toplevel"),
+             ("rev-parse", "--abbrev-ref", "HEAD"), ("branch", "--show-current"),
+             ("worktree", "list"), ("ls-files",)}
+DAY1_LOG_FLAGS = {"--oneline", "--stat", "--graph", "--decorate"}
+DAY1_BRANCH = re.compile(r"piloto/[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def stage_evidence():
+    """Prova do stage para a decisão humana: lista exata, numstat, check e hash."""
+    diff_code, diff = git("diff", "--cached", "--binary")
+    _, names = git("diff", "--cached", "--name-status")
+    _, numstat = git("diff", "--cached", "--numstat")
+    check_code, _ = git("diff", "--cached", "--check")
+    return {"arquivos": names.splitlines(), "numstat": numstat.splitlines(),
+            "sha256_diff": hashlib.sha256(diff.encode()).hexdigest() if diff_code == 0 else None,
+            "check_exit": check_code, "inspecao": "git diff --cached"}
+
+
+def day1_log(args):
+    seen, k = set(), 0
+    while k < len(args):
+        if (args[k] == "-n" and "-n" not in seen and k + 1 < len(args)
+                and re.fullmatch(r"[1-9][0-9]{0,2}", args[k + 1])):
+            seen.add("-n")
+            k += 2
+        elif args[k] in DAY1_LOG_FLAGS and args[k] not in seen:
+            seen.add(args[k])
+            k += 1
+        else:
+            return False
+    return True
+
+
+def day1_ref(ref):
+    if not re.fullmatch(r"HEAD(?:~[1-9][0-9]?)?|[0-9a-f]{7,40}", ref):
+        return False
+    return git("rev-parse", "--verify", "--quiet", ref + "^{commit}")[0] == 0
+
+
+def day1_paths(paths):
+    problems = []
+    for path in paths:
+        full = os.path.realpath(os.path.join(cwd, path)) if path else ""
+        relative = os.path.relpath(full, root) if root is not None and full else ".."
+        if (not path or path != path.strip() or path.startswith(("-", ":", "@"))
+                or any(char in path for char in "*?[]\\")
+                or relative == "." or relative.split(os.sep)[0] in {"..", ".git"}):
+            problems.append("path proibido no perfil miguel-day1: " + repr(path))
+        elif not os.path.lexists(os.path.join(cwd, path)) and git("ls-files", "--error-unmatch", "--", path)[0] != 0:
+            problems.append("path inexistente no perfil miguel-day1: " + path)
+    return problems
+
+
+def analyze_day1(text):
+    detail = {"operacao_efetiva": None, "executavel": None, "subcomando": None, "diretorio_alvo": str(cwd)}
+    if DAY1_META.search(text) or not text.startswith("git "):
+        return detail, [DAY1_OUT + ": composição, wrapper ou caractere proibido"]
+    try:
+        argv = shlex.split(text)
+    except ValueError:
+        return detail, ["comando pretendido inválido"]
+    detail["executavel"] = argv[0]
+    if argv[0] != "git" or len(argv) < 2:
+        return detail, [DAY1_OUT]
+    sub, args = argv[1], argv[2:]
+    detail["subcomando"] = sub
+    if sub == "push":
+        return detail, ["push nunca é permitido no perfil miguel-day1; usar procedimento separado de publicação"]
+    if tuple(argv[1:]) in DAY1_READ or (sub == "log" and day1_log(args)) or (
+            sub == "show" and (len(args) == 1 or args[:1] == ["--stat"] and len(args) == 2)
+            and day1_ref(args[-1])):
+        detail["operacao_efetiva"] = "read"
+        return detail, []
+    if sub == "switch" and len(args) == 2 and args[0] == "-c":
+        name = args[1]
+        if (not DAY1_BRANCH.fullmatch(name) or len(name) > 60 or name in {"main", "master", "deco/v0.2"}
+                or git("check-ref-format", "--branch", name)[0] != 0):
+            return detail, ["nome de branch fora do padrão piloto/<slug>: " + name]
+        if git("rev-parse", "--verify", "--quiet", "refs/heads/" + name)[0] == 0:
+            return detail, ["branch já existe: " + name]
+        scope["cria_branch"] = True
+        detail["operacao_efetiva"] = "branch"
+        return detail, []
+    if sub == "add" and len(args) >= 2 and args[0] == "--":
+        problems = day1_paths(args[1:])
+        if problems:
+            return detail, problems
+        detail["operacao_efetiva"] = "edit"
+        return detail, []
+    if sub == "commit" and len(args) == 2 and args[0] == "-m":
+        problems = [] if args[1].strip() else ["mensagem de commit vazia"]
+        if not STAGE["arquivos"]:
+            problems.append("stage vazio")
+        if STAGE["check_exit"] != 0:
+            problems.append("git diff --cached --check falhou")
+        inspected = e.get("GG_STAGE_SHA256", "").strip()
+        if not inspected:
+            problems.append("stage não inspecionado: informar GG_STAGE_SHA256 da inspeção humana")
+        elif inspected != STAGE["sha256_diff"]:
+            problems.append("stage mudou após a inspeção")
+        detail["operacao_efetiva"] = "commit"
+        return detail, problems
+    return detail, [DAY1_OUT]
+
+
+STAGE = stage_evidence() if day1 else None
+if day1:
+    command_detail, command_problems = analyze_day1(command) if command else (
+        {"operacao_efetiva": None, "executavel": None, "subcomando": None, "diretorio_alvo": None}, [])
+    declared = pathlib.Path(target) if target else None
+    if declared is None or root is None or (declared if declared.is_absolute() else root / declared).resolve() != root:
+        block.append("alvo do perfil miguel-day1 deve ser a raiz do repositório")
+else:
+    command_detail, command_problems = analyze(command) if command else (
+        {"operacao_efetiva": None, "executavel": None, "subcomando": None, "diretorio_alvo": None}, [])
 block.extend(command_problems)
 effective = command_detail["operacao_efetiva"]
 if effective is not None and operation and effective != operation:
@@ -739,7 +885,7 @@ if scope["altera_remote"] and approval != "yes":
     block.append("aprovação humana obrigatória para alterar remote")
 # GG_TARGET delimita escrita local: paths efetivos ficam dentro do alvo
 # declarado, nomes de branch/tag coincidem literalmente e escopo amplo exige ".".
-if (effective in {"edit", "commit", "branch"} or scope["altera_remote"] or scope["integra"]) and target:
+if not day1 and (effective in {"edit", "commit", "branch"} or scope["altera_remote"] or scope["integra"]) and target:
     try:
         targets = shlex.split(target)
     except ValueError:
@@ -773,7 +919,8 @@ if head_code != 0 or head != expected_head:
     block.append("HEAD divergente")
 creating_safe_branch = scope["cria_branch"] and operation == "branch" and effective == "branch"
 reading = operation == "read" and effective == "read"
-if branch in {"main", "master"} and e.get("GG_MAIN_AUTH") != "yes" and not (creating_safe_branch or reading):
+main_auth = e.get("GG_MAIN_AUTH") == "yes" and not day1
+if branch in {"main", "master"} and not main_auth and not (creating_safe_branch or reading):
     block.append("branch principal sem autorização")
 if not pathlib.Path(profile).is_file() or root is None or not pathlib.Path(profile).resolve().is_relative_to(root):
     block.append("perfil do repositório ausente")
@@ -857,6 +1004,9 @@ if operation == "destructive":
 if e.get("GG_FORCE_PUSH") == "yes":
     block.append("force push nunca autorizado implicitamente")
 
+if day1 and effective == "commit" and not block:
+    conditional.append("commit exige aprovação de Deco sobre o stage inspecionado (sha256 "
+                       + str(STAGE["sha256_diff"]) + "); repetir o GG imediatamente antes de executar")
 verdict = "GG-BLOQUEADO" if block else "GG-CONDICIONAL" if conditional else "GG-SEGURO"
 dirty_paths = [line[3:].split(" -> ")[-1] for line in status.splitlines() if len(line) > 3]
 stage_paths = [line.split("\t")[-1] for line in stage.splitlines() if "\t" in line]
@@ -883,6 +1033,7 @@ dimensions = {
 }
 print(json.dumps({
     "veredito": verdict, "dimensoes": dimensions, "motivos": block + conditional,
+    "perfil": "miguel-day1" if day1 else "geral" if not mode else "desconhecido", "stage_evidencia": STAGE,
     "evidencias": evidence, "operacoes_permitidas": dimensions["14"]["permitidas"],
     "operacoes_bloqueadas": dimensions["14"]["bloqueadas"],
     "momento_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),

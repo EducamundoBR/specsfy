@@ -359,7 +359,7 @@ def git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-class GitGuardianCommandTest(unittest.TestCase):
+class GitGuardianRepoCase(unittest.TestCase):
     """T004/P1: o GG deriva a operação do comando efetivo, sem confiar no rótulo.
 
     Cada caso isola uma causa: o ambiente-base é GG-SEGURO e a asserção confere
@@ -425,6 +425,9 @@ class GitGuardianCommandTest(unittest.TestCase):
         self.assertEqual(verdict, result["veredito"], motivos)
         self.assertEqual(1, len(motivos), motivos)
         self.assertIn(fragment, motivos[0])
+
+class GitGuardianCommandTest(GitGuardianRepoCase):
+    """Perfil geral: operação efetiva derivada do comando."""
 
     def test_base_environment_is_safe(self) -> None:
         result = self.run_gg()
@@ -793,6 +796,195 @@ class GitGuardianCommandTest(unittest.TestCase):
         edit = dict(GG_OPERATION="edit", GG_COMMAND="edit AGENTS.md", GG_TARGET="AGENTS.md")
         self.assert_only(self.run_gg(**main, **edit), "GG-BLOQUEADO", "branch principal sem autorização")
         self.assertEqual("GG-SEGURO", self.run_gg(**main, **edit, GG_MAIN_AUTH="yes")["veredito"])
+
+
+class GitGuardianDay1Test(GitGuardianRepoCase):
+    """Perfil miguel-day1: allowlist fechada por argv; o resto bloqueia."""
+
+    def gg(self, command: str, operation: str = "read", **changes: str) -> dict[str, object]:
+        return self.run_gg(**{"GG_MODE": "miguel-day1", "GG_OPERATION": operation,
+                              "GG_COMMAND": command, "GG_TARGET": ".", **changes})
+
+    def assert_blocked(self, command: str, operation: str = "read", fragment: str = "", **changes: str) -> None:
+        result = self.gg(command, operation, **changes)
+        self.assertEqual("GG-BLOQUEADO", result["veredito"], (command, result["motivos"]))
+        self.assertEqual("miguel-day1", result["perfil"])
+        if fragment:
+            self.assertTrue(any(fragment in m for m in result["motivos"]), (command, result["motivos"]))
+
+    def stage(self, name: str = "novo.txt", content: str = "conteúdo\n") -> None:
+        (self.repo / name).write_text(content, encoding="utf-8")
+        git(self.repo, "add", "--", name)
+
+    def staged_sha(self) -> str:
+        result = self.gg("git diff --cached", GG_DIRTY_ORIGIN="known", GG_PROTECTION="verified")
+        self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+        return result["stage_evidencia"]["sha256_diff"]
+
+    def test_positive_read_matrix(self) -> None:
+        for command in (
+            "git status", "git status --short", "git diff", "git diff --cached", "git log",
+            "git log --oneline", "git log --oneline -n 5", "git log --stat --graph --decorate",
+            "git show HEAD", "git show HEAD~1", "git show --stat HEAD", f"git show {self.head[:12]}",
+            "git rev-parse HEAD", "git rev-parse --show-toplevel", "git rev-parse --abbrev-ref HEAD",
+            "git branch --show-current", "git worktree list", "git ls-files",
+        ):
+            with self.subTest(command=command):
+                result = self.gg(command)
+                self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+                self.assertEqual("read", result["dimensoes"]["10"]["operacao_efetiva"])
+
+    def test_positive_local_writes(self) -> None:
+        result = self.gg("git switch -c piloto/demo-miguel", "branch")
+        self.assertEqual("GG-SEGURO", result["veredito"], result["motivos"])
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "a.md").write_text("a\n", encoding="utf-8")
+        (self.repo / "AGENTS.md").write_text("# Perfil alterado\n", encoding="utf-8")
+        dirty = dict(GG_DIRTY_ORIGIN="known", GG_PROTECTION="verified")
+        for command in ("git add -- AGENTS.md", "git add -- docs/a.md", "git add -- AGENTS.md docs"):
+            with self.subTest(command=command):
+                added = self.gg(command, "edit", **dirty)
+                self.assertEqual("GG-SEGURO", added["veredito"], added["motivos"])
+                self.assertEqual("edit", added["dimensoes"]["10"]["operacao_efetiva"])
+        self.assertEqual("", git(self.repo, "diff", "--cached", "--name-only"))
+        self.assertEqual("", git(self.repo, "branch", "--list", "piloto/demo-miguel"))
+
+    def test_commit_is_only_conditional_with_stage_proof(self) -> None:
+        dirty = dict(GG_DIRTY_ORIGIN="known", GG_PROTECTION="verified")
+        self.assert_blocked("git commit -m 'registro'", "commit", "stage vazio", **dirty)
+        self.stage()
+        sha = self.staged_sha()
+        result = self.gg("git commit -m 'registro do ensaio'", "commit", GG_STAGE_SHA256=sha, **dirty)
+        self.assertEqual("GG-CONDICIONAL", result["veredito"], result["motivos"])
+        self.assertTrue(any("aprovação de Deco" in m for m in result["motivos"]), result["motivos"])
+        evidence = result["stage_evidencia"]
+        self.assertEqual(["A\tnovo.txt"], evidence["arquivos"])
+        self.assertEqual(sha, evidence["sha256_diff"])
+        self.assertEqual(0, evidence["check_exit"])
+        self.assertEqual(["1\t0\tnovo.txt"], evidence["numstat"])
+        self.assertEqual(self.head, git(self.repo, "rev-parse", "HEAD"), "o commit não pode ser executado")
+        self.assert_blocked("git commit -m 'registro'", "commit", "stage não inspecionado", **dirty)
+        self.assert_blocked("git commit -m 'registro'", "commit", "stage mudou após a inspeção",
+                            GG_STAGE_SHA256="0" * 64, **dirty)
+        self.stage("depois.txt")
+        self.assert_blocked("git commit -m 'registro'", "commit", "stage mudou após a inspeção",
+                            GG_STAGE_SHA256=sha, **dirty)
+        for command in ("git commit", "git commit -m ''", "git commit -m '   '", "git commit -m x --no-verify",
+                        "git commit --amend -m x", "git commit -m x -- novo.txt", "git commit -am x",
+                        "git commit -m x -m y", "git commit --message=x", "git commit -mx"):
+            with self.subTest(command=command):
+                self.assert_blocked(command, "commit", GG_STAGE_SHA256=self.staged_sha(), **dirty)
+
+    def test_commit_blocks_whitespace_errors(self) -> None:
+        self.stage("espaco.txt", "linha com espaço final \n")
+        dirty = dict(GG_DIRTY_ORIGIN="known", GG_PROTECTION="verified")
+        self.assert_blocked("git commit -m 'registro'", "commit", "diff --cached --check",
+                            GG_STAGE_SHA256=self.staged_sha(), **dirty)
+
+    def test_push_is_always_blocked(self) -> None:
+        for command in ("git push", "git push origin deco/test", "git push -u origin deco/test",
+                        "git push --force", "git push --dry-run"):
+            with self.subTest(command=command):
+                self.assert_blocked(
+                    command, "publish", "push nunca é permitido no perfil miguel-day1",
+                    GG_HUMAN_APPROVAL="yes", GG_REMOTE_NAME="origin",
+                    GG_EXPECTED_REMOTE_SHA=self.remote_sha,
+                )
+
+    def test_findings_of_last_rejection_block(self) -> None:
+        outside_link = self.repo / "atalho"
+        outside_link.symlink_to(self.outside, target_is_directory=True)
+        (self.outside / "x.txt").write_text("x\n", encoding="utf-8")
+        dirty = dict(GG_DIRTY_ORIGIN="known", GG_PROTECTION="verified")
+        cases = (
+            ("git status --sho", "read"), ("git log --onel", "read"), ("git status --porcelain", "read"),
+            ("git log --format=%H", "read"), ("git log -p", "read"), ("git diff -- ../fora", "read"),
+            ("git diff HEAD", "read"), ("git show HEAD:AGENTS.md", "read"), ("git show -- HEAD", "read"),
+            ("git show inexistente", "read"), ("git show --output=x HEAD", "read"),
+            ("git rev-parse --git-path x", "read"), ("git ls-files --others", "read"),
+            ("git worktree list --porcelain", "read"), ("git branch", "read"),
+            ("git add AGENTS.md", "edit"), ("git add -- ", "edit"), ("git add -- ''", "edit"),
+            ("git add -- .", "edit"), ("git add -- *.md", "edit"), ("git add -- ':(glob)*'", "edit"),
+            ("git add -- :/AGENTS.md", "edit"), ("git add -- @lista", "edit"), ("git add -- ../fora.txt", "edit"),
+            ("git add -- -x", "edit"), ("git add -- atalho/x.txt", "edit"), ("git add -- atalho", "edit"),
+            ("git add -- .git/config", "edit"), ("git add -- inexistente.txt", "edit"),
+            ("git add --pathspec-from-file=lista", "edit"), ("git add -p -- AGENTS.md", "edit"),
+            ("git add -A", "edit"), ("git add -- AGENTS.md -A", "edit"),
+            ("git switch deco/test", "branch"), ("git switch -c main", "branch"),
+            ("git switch -c master", "branch"), ("git switch -c deco/v0.2", "branch"),
+            ("git switch -c Piloto/Demo", "branch"), ("git switch -c piloto/demo HEAD~1", "branch"),
+            ("git switch -c piloto/demo --track", "branch"), ("git switch -C piloto/demo", "branch"),
+            ("git switch --create piloto/demo", "branch"), ("git switch -c piloto/../x", "branch"),
+        )
+        for command, operation in cases:
+            with self.subTest(command=command):
+                self.assert_blocked(command, operation, **dirty)
+        git(self.repo, "branch", "piloto/existente")
+        self.assert_blocked("git switch -c piloto/existente", "branch", "branch já existe")
+
+    def test_wrappers_composition_and_global_options_block(self) -> None:
+        for command in (
+            "env git status", "/usr/bin/git status", "command git status", "sudo git status",
+            "\\git status", "git -C . status", "git -c color.ui=never status", "git --git-dir=.git status",
+            "git --work-tree=. status", "git --no-pager status", "git status && git push",
+            "git status || true", "git status; ls", "git status | cat", "$(git status)", "(git status)",
+            "git status > saida", "git status\ngit push", "git status # x", "git  status --short --short",
+            "GIT_DIR=.git git status", "git st", "git stat",
+        ):
+            with self.subTest(command=command):
+                self.assert_blocked(command)
+
+    def test_target_and_label_are_strict(self) -> None:
+        self.assert_blocked("git status", "read", "alvo do perfil miguel-day1", GG_TARGET="AGENTS.md")
+        self.assert_blocked("git status", "read", "alvo do perfil miguel-day1", GG_TARGET=str(self.outside))
+        root = self.gg("git status", GG_TARGET=str(self.repo))
+        self.assertEqual("GG-SEGURO", root["veredito"], root["motivos"])
+        self.assert_blocked("git status", "edit", "não corresponde ao comando efetivo")
+        unknown = self.gg("git status", GG_MODE="miguel-day2")
+        self.assertEqual("GG-BLOQUEADO", unknown["veredito"])
+        self.assertEqual("desconhecido", unknown["perfil"])
+        self.assertIn("modo do Git Guardian desconhecido: miguel-day2", unknown["motivos"])
+
+    def test_main_rejects_writes_even_with_authorization(self) -> None:
+        git(self.repo, "checkout", "-q", "-b", "main")
+        main = dict(GG_EXPECTED_BRANCH="main", GG_EXPECTED_UPSTREAM="AUSENTE", GG_MAIN_AUTH="yes")
+        self.assertEqual("GG-SEGURO", self.gg("git status", **main)["veredito"])
+        self.assertEqual("GG-SEGURO", self.gg("git switch -c piloto/demo", "branch", **main)["veredito"])
+        self.assert_blocked("git add -- AGENTS.md", "edit", "branch principal", **main)
+
+    def test_deny_by_default_for_valid_unlisted_git_commands(self) -> None:
+        """Propriedade: comandos Git válidos fora da allowlist sempre bloqueiam."""
+        unlisted = (
+            "git fetch", "git fetch origin", "git pull", "git pull origin deco/test", "git merge deco/test",
+            "git rebase HEAD~1", "git cherry-pick HEAD", "git revert HEAD", "git reset", "git reset --hard",
+            "git reset HEAD -- AGENTS.md", "git clean -n", "git clean -fd", "git checkout deco/test",
+            "git checkout -b piloto/x", "git checkout -- AGENTS.md", "git restore --staged AGENTS.md",
+            "git branch -d x", "git branch -D x", "git branch piloto/x", "git branch -a", "git stash",
+            "git stash list", "git tag", "git tag v1", "git remote -v", "git remote add b /tmp/b",
+            "git worktree add wt", "git worktree remove wt", "git worktree move a b", "git worktree prune",
+            "git prune", "git gc", "git maintenance run", "git submodule status", "git config --get user.name",
+            "git config user.name x", "git update-ref -d refs/heads/x", "git replace HEAD HEAD~1",
+            "git notes add -m x", "git bisect start", "git rm AGENTS.md", "git mv AGENTS.md B.md",
+            "git apply x.patch", "git am x.patch", "git format-patch -1", "git grep x", "git blame AGENTS.md",
+            "git describe", "git reflog", "git shortlog", "git ls-remote origin", "git cat-file -p HEAD",
+            "git archive HEAD", "git init", "git clone /tmp/x", "git help", "git version", "git --version",
+            "git whatchanged", "git show-ref", "git for-each-ref", "git count-objects", "git fsck",
+            "git symbolic-ref HEAD", "git diff --stat", "git diff --cached --stat", "git status -s",
+            "git log --all", "git log --oneline --all", "git rev-parse --verify HEAD", "git ls-files -s",
+            "git worktree lock wt", "git sparse-checkout list", "git lfs ls-files", "git difftool",
+            "git mergetool", "git request-pull HEAD origin", "git send-email x", "git bundle create x HEAD",
+        )
+        for command in unlisted:
+            with self.subTest(command=command):
+                result = self.gg(command, "read", GG_HUMAN_APPROVAL="yes")
+                self.assertEqual("GG-BLOQUEADO", result["veredito"], (command, result["motivos"]))
+                self.assertIsNone(result["dimensoes"]["10"]["operacao_efetiva"], command)
+
+    def test_general_profile_is_unchanged_without_mode(self) -> None:
+        general = self.run_gg(GG_COMMAND="git fetch origin", GG_OPERATION="remote", GG_TARGET="origin",
+                              GG_REMOTE_NAME="origin", GG_EXPECTED_REMOTE_SHA=self.remote_sha)
+        self.assertEqual("GG-SEGURO", general["veredito"], general["motivos"])
+        self.assertEqual("geral", general["perfil"])
 
 
 if __name__ == "__main__":

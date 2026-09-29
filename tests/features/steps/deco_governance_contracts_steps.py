@@ -40,6 +40,15 @@ SCENARIO_CASES = {
         "GitGuardianCommandTest.test_publish_matches_verified_target_without_pushing",
         "GitGuardianCommandTest.test_force_push_is_never_authorized",
         "GitGuardianCommandTest.test_push_outside_verified_target_blocks",
+        "GitGuardianDay1Test.test_positive_read_matrix",
+        "GitGuardianDay1Test.test_positive_local_writes",
+        "GitGuardianDay1Test.test_push_is_always_blocked",
+        "GitGuardianDay1Test.test_findings_of_last_rejection_block",
+        "GitGuardianDay1Test.test_wrappers_composition_and_global_options_block",
+        "GitGuardianDay1Test.test_target_and_label_are_strict",
+        "GitGuardianDay1Test.test_main_rejects_writes_even_with_authorization",
+        "GitGuardianDay1Test.test_deny_by_default_for_valid_unlisted_git_commands",
+        "GitGuardianDay1Test.test_general_profile_is_unchanged_without_mode",
     )),
     "Mecanismo formal emite veredito prefixado": ("AC-012", (
         "test_ac012_formal_verdict_is_prefixed_and_scope_is_explicit",
@@ -52,6 +61,8 @@ SCENARIO_CASES = {
     "Condição formal exige proteção e novo preflight": ("AC-012", (
         "test_ac012_formal_conditional_requires_protection_and_recheck",
         "GitGuardianCommandTest.test_each_blocking_cause_is_isolated",
+        "GitGuardianDay1Test.test_commit_is_only_conditional_with_stage_proof",
+        "GitGuardianDay1Test.test_commit_blocks_whitespace_errors",
     )),
     "Origem desconhecida bloqueia inspeção manual": ("AC-013", "test_ac013_unknown_dirty_worktree_blocks_manual_inspection"),
     "Origem desconhecida bloqueia mecanismo formal": ("AC-013", (
