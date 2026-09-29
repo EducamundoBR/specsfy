@@ -92,10 +92,16 @@ def verdict_problems(text: str) -> list[str]:
 
 
 def finding_rows(text: str) -> list[list[str]]:
+    """Todas as linhas da tabela de achados, do separador até a primeira linha fora da tabela."""
+    lines = text.splitlines()
+    start = next((index for index, line in enumerate(lines) if line.startswith("| ID ")), None)
+    if start is None:
+        return []
     rows = []
-    for line in text.splitlines():
-        if re.match(r"^\|\s*[A-Z]-\d+\s*\|", line):
-            rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
+    for line in lines[start + 2:]:
+        if not line.startswith("|"):
+            break
+        rows.append([cell.strip() for cell in line.strip().removeprefix("|").removesuffix("|").split("|")])
     return rows
 
 
@@ -136,6 +142,20 @@ class ReviewGateSkillsCommonTest(unittest.TestCase):
                 self.assertRegex(text, TABLE)
                 self.assertRegex(text, r"(?s)P0.{0,200}P1.{0,200}P2.{0,200}P3")
                 self.assertRegex(text, r"(?s)ordem de severidade.{0,160}evid[eê]ncia.{0,120}corre[cç][aã]o")
+
+
+class VerdictFixtureValidatorTest(unittest.TestCase):
+    """Controles negativos do validador de fixtures de Review Verdict."""
+
+    def test_every_row_of_findings_table_is_checked(self) -> None:
+        valid = fixture("delivery-verdict-regression.md")
+        self.assertEqual([], verdict_problems(valid))
+        extra = valid + "| E-X | P2 | fonte | impacto | correção | célula extra |\n"
+        self.assertTrue(verdict_problems(extra), "linha fora do modelo passou")
+        empty = valid + "| E-3 | P3 | fonte |  | correção |\n"
+        self.assertTrue(verdict_problems(empty), "célula vazia passou")
+        free = valid + "| qualquer | coisa |\n"
+        self.assertTrue(verdict_problems(free), "linha livre passou")
 
 
 class ReviewDefinitionTest(unittest.TestCase):
