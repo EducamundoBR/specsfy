@@ -79,7 +79,7 @@ def template_fields(template: Path) -> list[str]:
 
 
 def validate_round_artifact(
-    template: Path, text: str, *, observed_head: str, request: str,
+    template: Path, text: str, *, observed_head: str, observed_branch: str, request: str,
 ) -> list[str]:
     """Confere um artefato preenchido contra os campos obrigatórios do modelo."""
     values = dict(FIELD.findall(text))
@@ -89,6 +89,10 @@ def validate_round_artifact(
             problems.append(f"campo ausente: {field}")
         elif not values[field] or values[field] == "<preencher>":
             problems.append(f"campo não preenchido: {field}")
+        elif values[field] == "NÃO REGISTRADO":
+            problems.append(f"campo NÃO REGISTRADO: {field}")
+    if template == REVIEW_REQUEST and "Branch" in values and values["Branch"] != observed_branch:
+        problems.append("branch divergente da base observada")
     if template == REVIEW_REQUEST and "HEAD" in values and values["HEAD"] != observed_head:
         problems.append("HEAD divergente da base observada")
     if template == REVIEW_VERDICT:
@@ -285,12 +289,16 @@ class GovernanceRoundsTest(unittest.TestCase):
         O modelo é o schema; o validador integrado e o inventário são de T013.
         """
         observed_head = "a" * 40
+        observed_branch = "fixture/rodada"
         request = self.round_fixture("request-valid.md")
         cases = {
             "request-valid.md": (REVIEW_REQUEST, []),
             "request-missing-field.md": (REVIEW_REQUEST, ["campo ausente: Session ID"]),
             "request-placeholder.md": (REVIEW_REQUEST, ["campo não preenchido: Testes"]),
             "request-divergent-head.md": (REVIEW_REQUEST, ["HEAD divergente da base observada"]),
+            "request-divergent-branch.md": (REVIEW_REQUEST, ["branch divergente da base observada"]),
+            "request-unregistered-session.md": (REVIEW_REQUEST, ["campo NÃO REGISTRADO: Session ID"]),
+            "verdict-unregistered-session.md": (REVIEW_VERDICT, ["campo NÃO REGISTRADO: Session ID"]),
             "verdict-valid.md": (REVIEW_VERDICT, []),
             "verdict-invalid-value.md": (REVIEW_VERDICT, ["veredito fora do vocabulário: OK"]),
             "verdict-same-session.md": (REVIEW_VERDICT, ["revisor e implementador na mesma sessão"]),
@@ -300,7 +308,8 @@ class GovernanceRoundsTest(unittest.TestCase):
         for name, (template, expected) in cases.items():
             with self.subTest(fixture=name):
                 problems = validate_round_artifact(
-                    template, self.round_fixture(name), observed_head=observed_head, request=request,
+                    template, self.round_fixture(name), observed_head=observed_head,
+                    observed_branch=observed_branch, request=request,
                 )
                 self.assertEqual(expected, problems)
 

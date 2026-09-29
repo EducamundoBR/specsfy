@@ -157,7 +157,9 @@ sobre base diferente da declarada.
 
 ## Evidência
 
-Fixtures verificáveis em `deco/fixtures/review-handoff/`: `valid`,
-`material-change`, `broken`, `ambiguous` e `closed-target`. Base divergente e
-proveniência ausente são exercitadas pelas fixtures de T006 em
-`deco/fixtures/review-round/`.
+Fixtures de ponteiro e layout em `deco/fixtures/review-handoff/`. Base
+divergente e proveniência ausente são exercitadas pelas fixtures de T006 em
+`deco/fixtures/review-round/`: `request-divergent-branch.md` e
+`request-divergent-head.md` (AC-037), `request-unregistered-session.md` e
+`verdict-unregistered-session.md` (AC-036), todas rejeitadas pelo validador de
+`tests/test_deco_governance_rounds.py`.
