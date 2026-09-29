@@ -55,7 +55,7 @@ transita diretamente a `ACEITO`.
 | Aprovador designado conferiu no destino e registrou aceite explícito | `ACEITO`. |
 | Regressão antes da entrega, a partir de `PRONTO` | `CORREÇÃO NECESSÁRIA`; volta a `PRONTO` só após correção, verificações internas verdes e nova evidência. |
 | Falha de presença ou alcance no destino | Não entra em `ENTREGUE`; permanece `PRONTO` até nova entrega comprovada. |
-| Reprovação após a entrega, a partir de `ENTREGUE` | `ENTREGUE COM CORREÇÕES`: volta à origem e, após verificações verdes, retorna a `PRONTO`, exigindo nova entrega. |
+| Reprovação após a entrega, a partir de `ENTREGUE` | `ENTREGUE COM CORREÇÕES`, com o motivo e a correção necessária registrados: volta à origem e, após verificações verdes, retorna a `PRONTO`, exigindo nova entrega. |
 | Regressão após o aceite, a partir de `ACEITO` | `ACEITE REVOGADO`; reabre como `CORREÇÃO NECESSÁRIA`, com motivo e nova evidência, e percorre `CORREÇÃO NECESSÁRIA` → `PRONTO` → `ENTREGUE` → `ACEITO`. |
 | Evidência material ausente para qualquer critério | Não aprova: `CORREÇÕES SOLICITADAS`. |
 | Validação humana antes do destino | Conta só como autorização para entrega, nunca como `ACEITO`. |

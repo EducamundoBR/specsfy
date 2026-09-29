@@ -88,6 +88,8 @@ def verdict_problems(text: str) -> list[str]:
     for row in finding_rows(text):
         if len(row) != columns or not all(row):
             problems.append("achado com célula ausente: " + " | ".join(row))
+        elif row[1] not in {"P0", "P1", "P2", "P3"}:
+            problems.append("severidade fora de P0–P3: " + row[1])
     return problems
 
 
@@ -156,6 +158,8 @@ class VerdictFixtureValidatorTest(unittest.TestCase):
         self.assertTrue(verdict_problems(empty), "célula vazia passou")
         free = valid + "| qualquer | coisa |\n"
         self.assertTrue(verdict_problems(free), "linha livre passou")
+        severity = valid + "| E-4 | coisa | fonte | impacto | correção |\n"
+        self.assertTrue(verdict_problems(severity), "severidade fora de P0–P3 passou")
 
 
 class ReviewDefinitionTest(unittest.TestCase):
@@ -247,7 +251,8 @@ class ReviewDeliveryTest(unittest.TestCase):
         self.assertRegex(row(r"regress[aã]o antes da entrega"), r"CORREÇÃO NECESSÁRIA")
         self.assertRegex(row(r"presen[cç]a ou alcance"), r"(?i)n[aã]o entra em `ENTREGUE`")
         delivered = row(r"reprova[cç][aã]o ap[oó]s a entrega")
-        self.assertRegex(delivered, r"`ENTREGUE COM CORREÇÕES`.{0,120}origem.{0,120}`PRONTO`.{0,80}nova entrega")
+        self.assertRegex(delivered, r"`ENTREGUE COM CORREÇÕES`.{0,200}origem.{0,120}`PRONTO`.{0,80}nova entrega")
+        self.assertRegex(delivered, r"motivo.{0,80}corre[cç][aã]o necess[aá]ria")
         accepted = row(r"regress[aã]o ap[oó]s o aceite")
         self.assertRegex(accepted, r"`ACEITE REVOGADO`.{0,120}`CORREÇÃO NECESSÁRIA`.{0,120}motivo.{0,60}nova evid[eê]ncia")
         self.assertRegex(accepted, r"`CORREÇÃO NECESSÁRIA` → `PRONTO` → `ENTREGUE` → `ACEITO`")
