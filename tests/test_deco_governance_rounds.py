@@ -89,7 +89,7 @@ def validate_round_artifact(
             problems.append(f"campo ausente: {field}")
         elif not values[field] or values[field] == "<preencher>":
             problems.append(f"campo não preenchido: {field}")
-        elif values[field] == "NÃO REGISTRADO":
+        elif re.search(r"(?i)n[aã]o registrado", values[field]):
             problems.append(f"campo NÃO REGISTRADO: {field}")
     if template == REVIEW_REQUEST and "Branch" in values and values["Branch"] != observed_branch:
         problems.append("branch divergente da base observada")
@@ -299,6 +299,7 @@ class GovernanceRoundsTest(unittest.TestCase):
             "request-divergent-branch.md": (REVIEW_REQUEST, ["branch divergente da base observada"]),
             "request-unregistered-session.md": (REVIEW_REQUEST, ["campo NÃO REGISTRADO: Session ID"]),
             "verdict-unregistered-session.md": (REVIEW_VERDICT, ["campo NÃO REGISTRADO: Session ID"]),
+            "verdict-annotated-unregistered.md": (REVIEW_VERDICT, ["campo NÃO REGISTRADO: Session ID"]),
             "verdict-valid.md": (REVIEW_VERDICT, []),
             "verdict-invalid-value.md": (REVIEW_VERDICT, ["veredito fora do vocabulário: OK"]),
             "verdict-same-session.md": (REVIEW_VERDICT, ["revisor e implementador na mesma sessão"]),

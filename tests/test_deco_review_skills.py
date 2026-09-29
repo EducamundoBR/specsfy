@@ -95,6 +95,16 @@ def verdict_problems(text: str) -> list[str]:
     return problems
 
 
+def request_problems(text: str) -> list[str]:
+    """Confere um Review Request contra os campos obrigatórios do modelo de T006."""
+    template = (ROOT / Path("deco/templates/review-request.md")).read_text(encoding="utf-8")
+    required = [name for name, value in FIELD.findall(template) if value == "<preencher>"]
+    values = verdict_fields(text)
+    return [f"campo ausente ou vazio: {name}" for name in required
+            if not values.get(name) or values[name] == "<preencher>"
+            or re.search(r"(?i)n[aã]o registrado", values[name])]
+
+
 def finding_rows(text: str) -> list[list[str]]:
     """Todas as linhas da tabela de achados, do separador até a primeira linha fora da tabela."""
     lines = text.splitlines()
@@ -361,6 +371,8 @@ def write_unlock_problems(case: Path) -> list[str]:
         return ["risco ausente ou fora de alto e crítico"]
     plan = case / "plano"
     state = round_state(plan) if plan.is_dir() else ""
+    request_file = plan / "review-request.md"
+    request_text = request_file.read_text(encoding="utf-8") if request_file.is_file() else ""
     verdict_file = plan / "review-verdict.md"
     verdict = verdict_fields(verdict_file.read_text(encoding="utf-8")).get("Veredito", "") if verdict_file.is_file() else ""
     problems = []
@@ -372,6 +384,8 @@ def write_unlock_problems(case: Path) -> list[str]:
         problems.append("evidência contraditória")
     elif state != "APROVADO":
         problems.append("plano não aprovado")
+    elif request_problems(request_text) or verdict_problems(verdict_file.read_text(encoding="utf-8")):
+        problems.append("artefatos do plano fora do contrato de T006")
     if risk == "CRÍTICO":
         gate = case / "gate-humano.md"
         values = verdict_fields(gate.read_text(encoding="utf-8")) if gate.is_file() else {}
@@ -457,6 +471,7 @@ class ReviewHandoffTest(unittest.TestCase):
         cases = {
             "alto-pedido-sem-revisao": ["plano sem revisão concluída"],
             "alto-plano-aprovado": [],
+            "alto-artefatos-incompletos": ["artefatos do plano fora do contrato de T006"],
             "alto-plano-correcoes": ["plano não aprovado"],
             "alto-contraditorio": ["evidência contraditória"],
             "critico-sem-gate": ["gate humano ausente"],
