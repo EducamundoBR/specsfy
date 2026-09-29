@@ -85,11 +85,12 @@ def validate_round_artifact(
     values = dict(FIELD.findall(text))
     problems = []
     for field in template_fields(template):
+        value = " ".join(values.get(field, "").split())
         if field not in values:
             problems.append(f"campo ausente: {field}")
-        elif not values[field] or values[field] == "<preencher>":
+        elif not value or value == "<preencher>":
             problems.append(f"campo não preenchido: {field}")
-        elif re.search(r"(?i)n[aã]o registrado", values[field]):
+        elif re.search(r"(?i)n[aã]o registrado", value):
             problems.append(f"campo NÃO REGISTRADO: {field}")
     if template == REVIEW_REQUEST and "Branch" in values and values["Branch"] != observed_branch:
         problems.append("branch divergente da base observada")
@@ -313,6 +314,24 @@ class GovernanceRoundsTest(unittest.TestCase):
                     observed_branch=observed_branch, request=request,
                 )
                 self.assertEqual(expected, problems)
+
+    def test_spaced_unregistered_session_blocks_high_risk_plan(self) -> None:
+        unlock = ROOT / "deco/fixtures/review-handoff/write-unlock"
+        observed = dict(FIELD.findall((unlock / "alto-plano-aprovado/base-observada.md").read_text(encoding="utf-8")))
+        request = (unlock / "alto-plano-aprovado/plano/review-request.md").read_text(encoding="utf-8")
+        valid = (unlock / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        spaced = (unlock / "alto-verdict-sessao-espacada/plano/review-verdict.md").read_text(encoding="utf-8")
+        cases = {
+            "sessão registrada": (valid, []),
+            "espaço duplo": (spaced, ["campo NÃO REGISTRADO: Session ID"]),
+            "tab interno": (spaced.replace("NÃO  REGISTRADO", "NÃO\tREGISTRADO"), ["campo NÃO REGISTRADO: Session ID"]),
+        }
+        for name, (text, expected) in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(expected, validate_round_artifact(
+                    REVIEW_VERDICT, text, observed_head=observed["HEAD"],
+                    observed_branch=observed["Branch"], request=request,
+                ))
 
     def round_fixture(self, name: str) -> str:
         path = ROOT / "deco/fixtures/review-round" / name

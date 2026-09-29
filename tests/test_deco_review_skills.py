@@ -93,21 +93,46 @@ def verdict_problems(text: str) -> list[str]:
             problems.append("achado com célula ausente: " + " | ".join(row))
         elif row[1] not in {"P0", "P1", "P2", "P3"}:
             problems.append("severidade fora de P0–P3: " + row[1])
+    problems.extend("linha de achado não interpretável: " + line for line in unparsed_finding_lines(text))
     return problems
+
+
+def table_lines(text: str) -> tuple[list[str], int | None]:
+    """Linhas normalizadas e posição do cabeçalho da tabela de achados."""
+    lines = [" ".join(line.split()) for line in text.splitlines()]
+    start = next((index for index, line in enumerate(lines) if line.startswith("| ID ")), None)
+    return lines, start
+
+
+def table_end(lines: list[str], start: int) -> int:
+    end = start + 1
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    return end
 
 
 def finding_rows(text: str) -> list[list[str]]:
     """Todas as linhas da tabela de achados, do separador até a primeira linha fora da tabela."""
-    lines = text.splitlines()
-    start = next((index for index, line in enumerate(lines) if line.startswith("| ID ")), None)
+    lines, start = table_lines(text)
     if start is None:
         return []
-    rows = []
-    for line in lines[start + 2:]:
-        if not line.startswith("|"):
+    return [[cell.strip() for cell in line.removeprefix("|").removesuffix("|").split("|")]
+            for line in lines[start + 1:table_end(lines, start)]
+            if not re.fullmatch(r"\|(?: ?:?-+:? ?\|)+", line)]
+
+
+def unparsed_finding_lines(text: str) -> list[str]:
+    """Fail-closed: linha com `|` depois da tabela, na mesma seção, não é ignorada em silêncio."""
+    lines, start = table_lines(text)
+    if start is None:
+        return []
+    unparsed = []
+    for line in lines[table_end(lines, start):]:
+        if line.startswith("#"):
             break
-        rows.append([cell.strip() for cell in line.strip().removeprefix("|").removesuffix("|").split("|")])
-    return rows
+        if "|" in line:
+            unparsed.append(line)
+    return unparsed
 
 
 def findings(text: str) -> list[tuple[str, str]]:
@@ -412,11 +437,12 @@ def write_unlock_problems(case: Path) -> list[str]:
     if risk == "CRÍTICO":
         gate = case / "gate-humano.md"
         values = verdict_fields(gate.read_text(encoding="utf-8")) if gate.is_file() else {}
+        person = " ".join(values.get("Pessoa", "").split())
         if not gate.is_file():
             problems.append("gate humano ausente")
-        elif values.get("Decisão humana") != "APROVADA" or not values.get("Pessoa") or not values.get("Data"):
+        elif values.get("Decisão humana") != "APROVADA" or not person or not values.get("Data"):
             problems.append("gate humano incompleto")
-        elif values["Pessoa"].upper().startswith(("NÃO REGISTRADO", "<PREENCHER>")):
+        elif person.upper().startswith(("NÃO REGISTRADO", "<PREENCHER>")):
             problems.append("gate humano sem pessoa registrada")
     return problems
 
@@ -525,6 +551,22 @@ class ReviewHandoffTest(unittest.TestCase):
         case = ROOT / WRITE_UNLOCK / "critico-gate-sem-pessoa"
         self.assertTrue(case.is_dir(), "fixture ausente: critico-gate-sem-pessoa")
         self.assertEqual(["gate humano sem pessoa registrada"], write_unlock_problems(case))
+
+    def test_indented_blocking_finding_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1-indentado"
+        self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p1-indentado")
+        self.assertEqual(["Verdict APROVADO com achado P0 ou P1"], write_unlock_problems(case))
+        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        self.assertEqual([("P-1", "P3")], [(row[0], row[1]) for row in finding_rows(approved)])
+        unreadable = approved + "P-2 | P1 | spec §14 T004 | escrita indevida\n"
+        self.assertIn("linha de achado não interpretável: P-2 | P1 | spec §14 T004 | escrita indevida",
+                      verdict_problems(unreadable))
+
+    def test_critical_gate_with_spaced_unregistered_person_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "critico-gate-pessoa-espacada"
+        self.assertTrue(case.is_dir(), "fixture ausente: critico-gate-pessoa-espacada")
+        self.assertEqual(["gate humano sem pessoa registrada"], write_unlock_problems(case))
+        self.assertEqual([], write_unlock_problems(ROOT / WRITE_UNLOCK / "critico-completo"))
 
     def test_plan_gate_addendum_is_recorded_without_rewriting_history(self) -> None:
         spec = (ROOT / "deco/specs/0002-governanca-sdd/spec.md").read_text(encoding="utf-8")
