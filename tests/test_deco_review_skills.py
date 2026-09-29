@@ -5,7 +5,9 @@ AC-027 em `test_deco_governance_delivery.py`. Esta suíte cobre os achados da
 revisão independente do roteador (T007) e as verificações próprias de T008,
 T009 e T010: critérios do gate, achados priorizados, não autoaprovação,
 dependências cíclicas, lacunas, escopo adiado e estados de entrega, com
-fixtures de Review Verdict conferidas contra o modelo de T006.
+fixtures de Review Verdict conferidas contra o modelo de T006. T011
+(`review-handoff`) é coberta pelo ciclo da rodada, pela separação entre
+`CURRENT` e `SESSION_CURRENT` e por fixtures de ponteiro de rodada.
 """
 
 from __future__ import annotations
@@ -264,6 +266,87 @@ class ReviewDeliveryTest(unittest.TestCase):
         self.assertEqual("CORREÇÕES SOLICITADAS", verdict_fields(text)["Veredito"])
         self.assertIn("CORREÇÃO NECESSÁRIA", text)
         self.assertRegex(text, r"(?i)regress")
+
+
+HANDOFF = Path("deco/skills/review-handoff/SKILL.md")
+HANDOFF_FIXTURES = Path("deco/fixtures/review-handoff")
+ACTIVE = {"RASCUNHO", "PRONTO PARA REVISÃO", "EM REVISÃO", "CORREÇÕES SOLICITADAS", "PRONTO PARA RECONFERÊNCIA"}
+CLOSED = {"APROVADO", "REPROVADO", "ENCERRADA SEM APROVAÇÃO"}
+
+
+def round_state(round_dir: Path) -> str:
+    state = round_dir / "estado.md"
+    values = verdict_fields(state.read_text(encoding="utf-8")) if state.is_file() else {}
+    return values.get("Estado", "")
+
+
+def current_problems(reviews: Path) -> list[str]:
+    """Aplica a regra documentada em review-handoff ao diretório `reviews/` de uma spec."""
+    pointer = reviews / "CURRENT"
+    rounds = sorted(path for path in reviews.iterdir() if path.is_dir())
+    problems = [f"estado desconhecido: {path.name}" for path in rounds
+                if round_state(path) not in ACTIVE | CLOSED]
+    active = [path.name for path in rounds if round_state(path) in ACTIVE]
+    if len(active) > 1:
+        problems.append("mais de uma rodada ativa")
+    lines = pointer.read_text(encoding="utf-8").splitlines() if pointer.is_file() else []
+    if len(lines) != 1 or not lines[0].strip():
+        return problems + ["CURRENT ausente ou ambíguo"]
+    target = reviews / lines[0].strip()
+    if not target.is_dir():
+        problems.append("CURRENT quebrado")
+    elif round_state(target) in CLOSED:
+        problems.append("CURRENT aponta rodada encerrada")
+    return problems
+
+
+class ReviewHandoffTest(unittest.TestCase):
+    """T011: criação, validação, correção e encerramento de rodada."""
+
+    def test_skill_exists_with_canonical_name(self) -> None:
+        self.assertEqual("review-handoff", frontmatter_name(HANDOFF))
+
+    def test_round_cycle_has_decisions_for_each_state(self) -> None:
+        text = section(HANDOFF, "Ciclo da rodada")
+        self.assertRegex(text, TABLE)
+        for state in sorted(ACTIVE | {"APROVADO", "REPROVADO"}):
+            with self.subTest(state=state):
+                self.assertIn(f"`{state}`", text)
+        self.assertRegex(text, r"(?i)exatamente uma rodada ativa")
+        self.assertRegex(text, r"(?i)rodada conclu[ií]da.{0,80}imut[aá]vel")
+
+    def test_current_is_distinct_from_session_current(self) -> None:
+        text = section(HANDOFF, "CURRENT e SESSION_CURRENT")
+        self.assertRegex(text, TABLE)
+        self.assertRegex(text, r"(?s)`CURRENT`.{0,160}review-handoff")
+        self.assertRegex(text, r"(?s)`SESSION_CURRENT`.{0,160}Session Guardian")
+        self.assertRegex(text, r"(?i)n[aã]o (?:se )?substitu")
+        self.assertRegex(text, r"reviews/CURRENT")
+
+    def test_pointer_fixtures_follow_documented_rule(self) -> None:
+        cases = {
+            "valid": [],
+            "material-change": [],
+            "broken": ["CURRENT quebrado"],
+            "ambiguous": ["mais de uma rodada ativa"],
+            "closed-target": ["CURRENT aponta rodada encerrada"],
+        }
+        for name, expected in cases.items():
+            with self.subTest(fixture=name):
+                reviews = ROOT / HANDOFF_FIXTURES / name / "reviews"
+                self.assertTrue(reviews.is_dir(), f"fixture ausente: {name}")
+                self.assertEqual(expected, current_problems(reviews))
+
+    def test_material_change_closes_previous_round_without_rewrite(self) -> None:
+        reviews = ROOT / HANDOFF_FIXTURES / "material-change" / "reviews"
+        states = {path.name: round_state(path) for path in reviews.iterdir() if path.is_dir()}
+        self.assertIn("ENCERRADA SEM APROVAÇÃO", states.values())
+        closed = next(name for name, state in states.items() if state == "ENCERRADA SEM APROVAÇÃO")
+        note = (reviews / closed / "estado.md").read_text(encoding="utf-8")
+        self.assertRegex(note, r"MUDANÇA MATERIAL")
+        self.assertRegex(note, r"(?i)substitu[ií]da por")
+        current = (reviews / "CURRENT").read_text(encoding="utf-8").strip()
+        self.assertNotEqual(closed, current)
 
 
 if __name__ == "__main__":

@@ -64,6 +64,7 @@ deco/
 │   ├── review-definition/SKILL.md     revisão do Definition Gate (SPEC-0002/T008)
 │   ├── review-plan/SKILL.md           revisão do Plan Gate (SPEC-0002/T009)
 │   ├── review-delivery/SKILL.md       revisão do Delivery Gate (SPEC-0002/T010)
+│   ├── review-handoff/SKILL.md        rodada, pacote e ponteiro CURRENT (SPEC-0002/T011)
 │   └── session-guardian/SKILL.md      abertura e fechamento de sessão (SPEC-0002/T005)
 ├── templates/
 │   ├── HANDOFF.md                     ponteiro para o snapshot ativo
@@ -74,6 +75,7 @@ deco/
 ├── fixtures/handoff/                  cenários documentais para o verifier da v0.2
 ├── fixtures/review-round/             artefatos de rodada válidos e inválidos (T006)
 ├── fixtures/review-skills/            Review Verdicts de exemplo (T008–T010)
+├── fixtures/review-handoff/           ponteiros de rodada válidos e inválidos (T011)
 └── specs/                             specs do desenvolvimento da própria camada
     └── <NNNN>-<slug>/
         ├── spec.md                    fonte normativa da fatia (Specsfy/2.0)
