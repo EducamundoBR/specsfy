@@ -61,6 +61,9 @@ deco/
 │   ├── fechar-sessao-deco/SKILL.md    procedimento do contrato de handoff
 │   ├── git-guardian/SKILL.md          preflight Git executável (SPEC-0002/T004)
 │   ├── review-router/SKILL.md         risco, gate, skill, perfis e papéis (SPEC-0002/T007)
+│   ├── review-definition/SKILL.md     revisão do Definition Gate (SPEC-0002/T008)
+│   ├── review-plan/SKILL.md           revisão do Plan Gate (SPEC-0002/T009)
+│   ├── review-delivery/SKILL.md       revisão do Delivery Gate (SPEC-0002/T010)
 │   └── session-guardian/SKILL.md      abertura e fechamento de sessão (SPEC-0002/T005)
 ├── templates/
 │   ├── HANDOFF.md                     ponteiro para o snapshot ativo
@@ -70,6 +73,7 @@ deco/
 │   └── correction-report.md           modelo do implementador na reconferência
 ├── fixtures/handoff/                  cenários documentais para o verifier da v0.2
 ├── fixtures/review-round/             artefatos de rodada válidos e inválidos (T006)
+├── fixtures/review-skills/            Review Verdicts de exemplo (T008–T010)
 └── specs/                             specs do desenvolvimento da própria camada
     └── <NNNN>-<slug>/
         ├── spec.md                    fonte normativa da fatia (Specsfy/2.0)
