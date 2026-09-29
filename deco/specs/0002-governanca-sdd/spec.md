@@ -17,7 +17,7 @@
 | Review state | APROVADO |
 | Evidence Contract | 1 |
 | Interface para pessoas | Não — a governança é processo e não cria superfície própria; cockpit e Consulta SDD pertencem à SPEC-0001 e são consumidos como interface declarada |
-| Atualizada em | 2026-09-21 |
+| Atualizada em | 2026-09-29 |
 
 > **Decisão da rodada documental, Definition Gate aprovado.** A separação entre
 > a ponte Notion ↔ repositório e a governança transversal foi proposta no handoff
@@ -1633,6 +1633,25 @@ aceito não foi contornado para satisfazer esse defeito do validador.
 - **Evidência FR-011 e condições**:
   [ato de aprovação do Plan Gate](reviews/plan-gate-2026-09-21/plan-gate-approval.md).
   `Delivery Gate` permanece `Pending`; nenhuma tarefa foi implementada.
+- **Adendo de 29/09/2026 — layout físico de `CURRENT` (decisão humana de Deco)**:
+  completa a reserva de FR-007 sobre nomes físicos, sem reescrever o ato de
+  21/09/2026 nem o texto de FR-007. Decisão aprovada:
+  1. `<spec>/reviews/CURRENT` é um arquivo UTF-8 de uma linha que contém somente
+     o nome da pasta da rodada ativa.
+  2. A rodada fica em `<spec>/reviews/<gate>-<AAAA-MM-DD>/`.
+  3. Cada rodada contém `estado.md` e os três artefatos de revisão de FR-007
+     (Review Request, Review Verdict e Correction Report).
+  4. Regras fail-closed: `CURRENT` só aceita nome relativo dentro de `reviews/`;
+     bloquear caminho absoluto, `..`, separadores que escapem da pasta, link
+     simbólico, destino inexistente, arquivo quando uma pasta é exigida,
+     conteúdo com mais de uma linha útil e rodada incompatível com o gate
+     esperado.
+  5. Colisão no mesmo dia: a primeira rodada usa `<gate>-<AAAA-MM-DD>`; nova
+     rodada do mesmo gate no mesmo dia usa `-r02`, depois `-r03` e assim por
+     diante; rodada encerrada não pode ser sobrescrita; `CURRENT` passa a apontar
+     para a nova rodada.
+  Mecanismo: `deco/skills/review-handoff/SKILL.md` (T011), com fixtures em
+  `deco/fixtures/review-handoff/`. `Delivery Gate` continua `Pending`.
 
 #### Gate do Ato III — Entrega
 

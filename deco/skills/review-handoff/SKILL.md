@@ -20,21 +20,49 @@ contratos; não os duplica.
 
 ## Layout físico da rodada
 
-Convenção adotada por T011, seguindo a estrutura já usada nas rodadas deste
-repositório:
+Layout aprovado por decisão humana de Deco no adendo de 29/09/2026 ao Plan Gate
+(SPEC-0002, §13, Gate do Ato II):
 
 ```text
 <pasta da spec>/reviews/
-  CURRENT                      uma linha: nome da pasta da rodada ativa
-  <gate>-<AAAA-MM-DD>[-n]/
-    estado.md                  - **Estado**: <estado da rodada>
-    review-request.md          implementador
-    review-verdict.md          revisor
-    correction-report.md       implementador, quando houver achados
+  CURRENT                           UTF-8, uma linha: nome da pasta da rodada ativa
+  <gate>-<AAAA-MM-DD>[-rNN]/
+    estado.md                       - **Estado**: <estado da rodada>
+    review-request.md               implementador
+    review-verdict.md               revisor
+    correction-report.md            implementador, quando houver achados
 ```
 
-O pacote é delta: referencia fontes estáveis por caminho e não cola transcript
-nem histórico de conversa. A sessão nova recebe apenas o caminho e `CURRENT`.
+Artefatos exigidos por estado: `review-request.md` a partir de
+`PRONTO PARA REVISÃO`; também `review-verdict.md` em `CORREÇÕES SOLICITADAS`,
+`APROVADO` e `REPROVADO`; também `correction-report.md` em
+`PRONTO PARA RECONFERÊNCIA`. `RASCUNHO` e `ENCERRADA SEM APROVAÇÃO` exigem só
+`estado.md`. O pacote é delta: referencia fontes estáveis por caminho e não cola
+transcript nem histórico de conversa. A sessão nova recebe apenas o caminho e
+`CURRENT`.
+
+Regras fail-closed de `CURRENT`:
+
+| Condição | Resultado |
+| --- | --- |
+| `CURRENT` ausente, não UTF-8, vazio ou com mais de uma linha útil | Bloquear. |
+| Conteúdo com caminho absoluto | Bloquear. |
+| Conteúdo com `..` | Bloquear. |
+| Conteúdo com separador de caminho que escape da pasta `reviews/` | Bloquear; só um nome relativo dentro de `reviews/`. |
+| `CURRENT` ou a pasta de destino é link simbólico | Bloquear. |
+| Destino inexistente (ponteiro quebrado) | Bloquear. |
+| Destino existe, mas não é pasta | Bloquear. |
+| Nome fora de `<gate>-<AAAA-MM-DD>[-rNN]` ou de gate diferente do gate esperado | Bloquear: rodada incompatível com o gate esperado. |
+| Artefato exigido pelo estado da rodada ausente | Bloquear. |
+| Destino é pasta de rodada ativa do gate esperado, com artefatos completos | Prosseguir, após conferir branch e HEAD. |
+
+Colisão no mesmo dia:
+
+| Condição | Resultado |
+| --- | --- |
+| Primeira rodada do gate no dia | Pasta `<gate>-<AAAA-MM-DD>`. |
+| Nova rodada do mesmo gate no mesmo dia | Sufixo `-r02`, depois `-r03` e assim por diante; `CURRENT` passa a apontar para a nova rodada. |
+| Pedido para reutilizar ou sobrescrever pasta existente | Recusar: uma rodada encerrada não pode ser sobrescrita. |
 
 ## Ciclo da rodada
 

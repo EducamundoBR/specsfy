@@ -280,24 +280,74 @@ def round_state(round_dir: Path) -> str:
     return values.get("Estado", "")
 
 
-def current_problems(reviews: Path) -> list[str]:
-    """Aplica a regra documentada em review-handoff ao diretório `reviews/` de uma spec."""
-    pointer = reviews / "CURRENT"
-    rounds = sorted(path for path in reviews.iterdir() if path.is_dir())
-    problems = [f"estado desconhecido: {path.name}" for path in rounds
-                if round_state(path) not in ACTIVE | CLOSED]
-    active = [path.name for path in rounds if round_state(path) in ACTIVE]
-    if len(active) > 1:
+ROUND_NAME = re.compile(r"(?P<gate>[a-z]+(?:-[a-z]+)*)-(?P<date>\d{4}-\d{2}-\d{2})(?:-r(?P<n>0[2-9]|[1-9]\d))?")
+ARTIFACTS_BY_STATE = {
+    "RASCUNHO": (),
+    "PRONTO PARA REVISÃO": ("review-request.md",),
+    "EM REVISÃO": ("review-request.md",),
+    "CORREÇÕES SOLICITADAS": ("review-request.md", "review-verdict.md"),
+    "PRONTO PARA RECONFERÊNCIA": ("review-request.md", "review-verdict.md", "correction-report.md"),
+    "APROVADO": ("review-request.md", "review-verdict.md"),
+    "REPROVADO": ("review-request.md", "review-verdict.md"),
+    "ENCERRADA SEM APROVAÇÃO": (),
+}
+
+
+def current_problems(reviews: Path, gate: str) -> list[str]:
+    """Aplica o layout aprovado no adendo de 29/09/2026 ao Plan Gate (fail-closed)."""
+    rounds = sorted(path for path in reviews.iterdir() if path.is_dir() and not path.is_symlink())
+    problems = []
+    for path in rounds:
+        state = round_state(path)
+        if state not in ARTIFACTS_BY_STATE:
+            problems.append(f"estado desconhecido: {path.name}")
+            continue
+        problems += [f"artefato ausente: {path.name}/{name}" for name in ARTIFACTS_BY_STATE[state]
+                     if not (path / name).is_file()]
+    if len([path for path in rounds if round_state(path) in ACTIVE]) > 1:
         problems.append("mais de uma rodada ativa")
-    lines = pointer.read_text(encoding="utf-8").splitlines() if pointer.is_file() else []
-    if len(lines) != 1 or not lines[0].strip():
-        return problems + ["CURRENT ausente ou ambíguo"]
-    target = reviews / lines[0].strip()
-    if not target.is_dir():
+    pointer = reviews / "CURRENT"
+    if pointer.is_symlink():
+        return problems + ["CURRENT é link simbólico"]
+    if not pointer.is_file():
+        return problems + ["CURRENT ausente"]
+    try:
+        raw = pointer.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        return problems + ["CURRENT não é UTF-8"]
+    useful = [line for line in raw.splitlines() if line.strip()]
+    if len(useful) != 1:
+        return problems + ["CURRENT sem exatamente uma linha útil"]
+    name = useful[0]
+    target = reviews / name
+    if name.startswith("/") or Path(name).is_absolute():
+        problems.append("CURRENT com caminho absoluto")
+    elif ".." in re.split(r"[\\/]", name):
+        problems.append("CURRENT com ..")
+    elif "/" in name or "\\" in name:
+        problems.append("CURRENT com separador de caminho")
+    elif target.is_symlink():
+        problems.append("destino de CURRENT é link simbólico")
+    elif not target.exists():
         problems.append("CURRENT quebrado")
+    elif not target.is_dir():
+        problems.append("destino de CURRENT não é pasta")
+    elif not (match := ROUND_NAME.fullmatch(name)) or match.group("gate") != gate:
+        problems.append("rodada incompatível com o gate esperado")
     elif round_state(target) in CLOSED:
         problems.append("CURRENT aponta rodada encerrada")
     return problems
+
+
+def next_round_name(reviews: Path, gate: str, date: str) -> str:
+    """Nome da próxima rodada do gate no dia: base, depois -r02, -r03 etc., sem sobrescrever."""
+    base = f"{gate}-{date}"
+    taken = [path.name for path in reviews.iterdir()
+             if path.name == base or re.fullmatch(re.escape(base) + r"-r\d{2}", path.name)]
+    if not taken:
+        return base
+    numbers = [int(name.rsplit("-r", 1)[1]) for name in taken if name != base]
+    return f"{base}-r{max(numbers, default=1) + 1:02d}"
 
 
 class ReviewHandoffTest(unittest.TestCase):
@@ -325,17 +375,53 @@ class ReviewHandoffTest(unittest.TestCase):
 
     def test_pointer_fixtures_follow_documented_rule(self) -> None:
         cases = {
-            "valid": [],
-            "material-change": [],
-            "broken": ["CURRENT quebrado"],
-            "ambiguous": ["mais de uma rodada ativa"],
-            "closed-target": ["CURRENT aponta rodada encerrada"],
+            "valid": ("delivery", []),
+            "material-change": ("plan", []),
+            "collision": ("plan", []),
+            "broken": ("plan", ["CURRENT quebrado"]),
+            "ambiguous": ("plan", ["mais de uma rodada ativa"]),
+            "closed-target": ("plan", ["CURRENT aponta rodada encerrada"]),
+            "absolute": ("plan", ["CURRENT com caminho absoluto"]),
+            "dotdot": ("plan", ["CURRENT com .."]),
+            "separator": ("plan", ["CURRENT com separador de caminho"]),
+            "symlink-current": ("plan", ["CURRENT é link simbólico"]),
+            "symlink-target": ("plan", ["destino de CURRENT é link simbólico"]),
+            "file-target": ("plan", ["destino de CURRENT não é pasta"]),
+            "multiline": ("plan", ["CURRENT sem exatamente uma linha útil"]),
+            "wrong-gate": ("plan", ["rodada incompatível com o gate esperado"]),
+            "missing-artifact": ("plan", ["artefato ausente: plan-2026-01-10/review-request.md"]),
         }
-        for name, expected in cases.items():
+        for name, (gate, expected) in cases.items():
             with self.subTest(fixture=name):
                 reviews = ROOT / HANDOFF_FIXTURES / name / "reviews"
                 self.assertTrue(reviews.is_dir(), f"fixture ausente: {name}")
-                self.assertEqual(expected, current_problems(reviews))
+                self.assertEqual(expected, current_problems(reviews, gate))
+
+    def test_same_day_collision_uses_numbered_suffix_without_overwrite(self) -> None:
+        reviews = ROOT / HANDOFF_FIXTURES / "collision" / "reviews"
+        self.assertEqual("plan-2026-01-10-r03", next_round_name(reviews, "plan", "2026-01-10"))
+        self.assertEqual("plan-2026-01-11", next_round_name(reviews, "plan", "2026-01-11"))
+        self.assertEqual("delivery-2026-01-10", next_round_name(reviews, "delivery", "2026-01-10"))
+        existing = {path.name for path in reviews.iterdir()}
+        self.assertNotIn(next_round_name(reviews, "plan", "2026-01-10"), existing)
+        self.assertEqual("plan-2026-01-10-r02", (reviews / "CURRENT").read_text(encoding="utf-8").strip())
+
+    def test_skill_documents_approved_layout_and_fail_closed_rules(self) -> None:
+        text = section(HANDOFF, "Layout físico da rodada")
+        self.assertRegex(text, TABLE)
+        self.assertRegex(text, r"adendo de 29/09/2026")
+        for rule in (r"caminho absoluto", r"`\.\.`", r"separador", r"link simb[oó]lico", r"inexistente",
+                     r"n[aã]o [eé] pasta", r"mais de uma linha [uú]til", r"gate esperado",
+                     r"-r02", r"n[aã]o pode ser sobrescrita"):
+            with self.subTest(rule=rule):
+                self.assertRegex(text, rf"(?i){rule}")
+
+    def test_plan_gate_addendum_is_recorded_without_rewriting_history(self) -> None:
+        spec = (ROOT / "deco/specs/0002-governanca-sdd/spec.md").read_text(encoding="utf-8")
+        self.assertRegex(spec, r"(?s)Adendo de 29/09/2026.{0,400}reviews/CURRENT.{0,1500}-r02")
+        approval = (ROOT / "deco/specs/0002-governanca-sdd/reviews/plan-gate-2026-09-21/plan-gate-approval.md")
+        self.assertNotIn("29/09/2026", approval.read_text(encoding="utf-8"))
+        self.assertRegex(spec, r"nomes f[ií]sicos e\s+caminhos ser[aã]o definidos somente no Plan Gate")
 
     def test_material_change_closes_previous_round_without_rewrite(self) -> None:
         reviews = ROOT / HANDOFF_FIXTURES / "material-change" / "reviews"
