@@ -162,12 +162,14 @@ Cada papel lógico — planejamento forte, implementação, revisão e leitura b
 é registrado mapeado a harness, modelo, effort e data da execução concreta, além
 do session ID quando observado. A troca de nome ou versão do modelo não invalida
 o processo: atualiza-se o mapeamento, e o fornecedor nunca é fixo. Valor não
-observado persiste como `NÃO REGISTRADO`, nunca inferido nem completado depois.
+observado persiste como `NÃO REGISTRADO`, nunca inferido. Ele só é substituído
+por observação posterior documentada, com fonte e data, no mesmo registro.
 
 | Condição | Resultado |
 | --- | --- |
 | Papel executado com harness, modelo, effort e data observados | Registrar o mapeamento completo. |
-| Algum valor não observado | Registrar `NÃO REGISTRADO`; se o campo for obrigatório para fechar, bloquear o fechamento. |
+| Algum valor não observado | Registrar `NÃO REGISTRADO`; se o campo for obrigatório para fechar (AC-010), bloquear o fechamento. |
+| Valor observado depois, com fonte verificável | Atualizar o campo citando fonte e data; nunca por dedução. |
 | Modelo renomeado ou atualizado | Atualizar o mapeamento; o processo continua válido. |
 
 ### AC-008 — Separação entre executor e aprovador
@@ -204,12 +206,18 @@ voltam por severidade (`P0` a `P3`), cada um com evidência e correção propost
 
 Veredito favorável sem teste, diff e evidência não fecha gate. Na ausência de
 evidência mínima, o fechamento é recusado e a aprovação fica bloqueada até que a
-evidência seja anexada e conferida.
+evidência seja anexada e conferida. A evidência mínima inclui a proveniência de
+FR-011: harness, modelo, effort e session ID do implementador e do revisor,
+além de unidade, risco e justificativa, branch e HEAD, escopo ou diff,
+verificações e resultado, achados, veredito, correções e gate resultante.
+Qualquer desses campos em `NÃO REGISTRADO` faz o roteador recusar o
+encaminhamento ao decisor e manter o gate bloqueado.
 
 | Condição | Resultado |
 | --- | --- |
 | Veredito favorável sem teste, diff ou evidência | Não fecha; exigir a evidência mínima. |
-| Veredito com teste, diff e evidência e instância distinta | Encaminhar ao decisor do gate. |
+| Campo de proveniência de implementador ou revisor em `NÃO REGISTRADO` | Recusar o encaminhamento; gate bloqueado até observação documentada. |
+| Evidência mínima completa, proveniências observadas e instância distinta | Encaminhar ao decisor do gate. |
 
 ## Registro de roteamento
 
@@ -235,6 +243,6 @@ Saída obrigatória, gravada junto da unidade antes da execução:
 | Uma linha em middleware de autenticação | `CRÍTICO`; `security-auth-privacy`; gates humanos antes da escrita e da publicação. |
 | Novo teste para comportamento existente | `MÉDIO`; uma revisão consolidada. |
 | Refatoração transversal sem mudança de comportamento | Gatilho 6: `ALTO`; plano e resultado revisados. |
-| Push de branch local já aprovada | Gatilho 7 ou 8 conforme o alvo; `git-deploy`; gate humano antes da ação. |
+| Push comum de branch de trabalho já revisada | `MÉDIO` pelo efeito de publicação interna; `git-deploy`; parada humana antes de publicar (FR-012); gatilho 7 apenas se o destino for produção; gatilho 8 apenas se reescrever histórico compartilhado. |
 | Pareceres divergentes de famílias diferentes | Gatilho 11: `ALTO`; escalar a quem orquestra. |
 | Modelo recém-lançado como revisor final de pagamento | Recusar pelo AC-006. |
