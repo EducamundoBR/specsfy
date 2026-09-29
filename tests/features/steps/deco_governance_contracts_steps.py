@@ -49,6 +49,7 @@ SCENARIO_CASES = {
         "GitGuardianDay1Test.test_main_rejects_writes_even_with_authorization",
         "GitGuardianDay1Test.test_deny_by_default_for_valid_unlisted_git_commands",
         "GitGuardianDay1Test.test_general_profile_is_unchanged_without_mode",
+        "GitGuardianDay1Test.test_raw_command_text_is_checked_before_normalization",
     )),
     "Mecanismo formal emite veredito prefixado": ("AC-012", (
         "test_ac012_formal_verdict_is_prefixed_and_scope_is_explicit",
@@ -63,6 +64,7 @@ SCENARIO_CASES = {
         "GitGuardianCommandTest.test_each_blocking_cause_is_isolated",
         "GitGuardianDay1Test.test_commit_is_only_conditional_with_stage_proof",
         "GitGuardianDay1Test.test_commit_blocks_whitespace_errors",
+        "GitGuardianDay1Test.test_stage_hash_is_raw_bytes_of_binary_diff",
     )),
     "Origem desconhecida bloqueia inspeção manual": ("AC-013", "test_ac013_unknown_dirty_worktree_blocks_manual_inspection"),
     "Origem desconhecida bloqueia mecanismo formal": ("AC-013", (

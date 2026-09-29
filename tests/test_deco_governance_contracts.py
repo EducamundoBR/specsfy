@@ -7,6 +7,7 @@ de T004 também exercita o preflight em repositórios Git isolados.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -874,6 +875,22 @@ class GitGuardianDay1Test(GitGuardianRepoCase):
                         "git commit -m x -m y", "git commit --message=x", "git commit -mx"):
             with self.subTest(command=command):
                 self.assert_blocked(command, "commit", GG_STAGE_SHA256=self.staged_sha(), **dirty)
+
+    def test_stage_hash_is_raw_bytes_of_binary_diff(self) -> None:
+        self.stage()
+        raw = subprocess.run(["git", "-C", str(self.repo), "diff", "--cached", "--binary"],
+                             check=True, capture_output=True).stdout
+        independent = hashlib.sha256(raw).hexdigest()
+        self.assertEqual(independent, self.staged_sha())
+        result = self.gg("git commit -m 'registro'", "commit", GG_STAGE_SHA256=independent,
+                         GG_DIRTY_ORIGIN="known", GG_PROTECTION="verified")
+        self.assertEqual("GG-CONDICIONAL", result["veredito"], result["motivos"])
+
+    def test_raw_command_text_is_checked_before_normalization(self) -> None:
+        for command in ("git status\n", "\ngit status", " git status", "git status ", "\tgit status",
+                        "git status\r", "git\tstatus"):
+            with self.subTest(command=repr(command)):
+                self.assert_blocked(command)
 
     def test_commit_blocks_whitespace_errors(self) -> None:
         self.stage("espaco.txt", "linha com espaço final \n")

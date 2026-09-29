@@ -194,7 +194,8 @@ operação efetiva, o executável, o subcomando e o diretório-alvo.
 ### Perfil fechado `miguel-day1`
 
 `GG_MODE=miguel-day1` troca a análise geral por uma allowlist fechada,
-comparada pelo argv completo. Não há prefixo, substring nem abreviação; o que
+comparada pelo argv completo do texto bruto de `GG_COMMAND` (sem espaço nas
+bordas, quebra de linha ou tabulação). Não há prefixo, substring nem abreviação; o que
 não coincidir exatamente com uma forma abaixo é `GG-BLOQUEADO`. As demais
 dimensões continuam valendo. `GG_TARGET` precisa ser a raiz (`.` ou o caminho
 absoluto dela); `GG_MAIN_AUTH` é ignorado; outro valor de `GG_MODE` bloqueia.
@@ -206,7 +207,7 @@ absoluto dela); `GG_MAIN_AUTH` é ignorado; outro valor de `GG_MODE` bloqueia.
 | `git show <ref>` ou `git show --stat <ref>`, com `HEAD`, `HEAD~N` ou SHA hexadecimal que resolva para commit | Leitura. |
 | `git switch -c piloto/<slug>` (minúsculas, dígitos e hífens; branch inexistente; sem ponto de partida) | Branch local; única escrita liberada em `main`/`master`. |
 | `git add -- <path>...` com paths existentes ou rastreados, dentro da raiz após resolver symlinks, fora de `.git`, sem `.`, glob, `:` mágico, `@`, hífen inicial ou path vazio | Edição local. |
-| `git commit -m <mensagem não vazia>` com stage não vazio, `git diff --cached --check` verde e `GG_STAGE_SHA256` igual ao hash do diff staged inspecionado | Nunca `GG-SEGURO`: no máximo `GG-CONDICIONAL`, que exige aprovação de Deco. A saída traz `stage_evidencia` (arquivos, numstat, check e hash). |
+| `git commit -m <mensagem não vazia>` com stage não vazio, `git diff --cached --check` verde e `GG_STAGE_SHA256` igual ao SHA-256 dos bytes crus de `git diff --cached --binary` | Nunca `GG-SEGURO`: no máximo `GG-CONDICIONAL`, que exige aprovação de Deco. A saída traz `stage_evidencia` (arquivos, numstat, check e hash). |
 | `git push` em qualquer forma, mesmo com aprovação declarada | `GG-BLOQUEADO`; a publicação é um procedimento separado com autorização humana, novo GG, destino e SHA. |
 | Qualquer outro comando, opção, wrapper, executável absoluto, opção global, composição, redirecionamento, subshell, substituição, comentário ou quebra de linha | `GG-BLOQUEADO`. |
 
@@ -771,12 +772,20 @@ DAY1_BRANCH = re.compile(r"piloto/[a-z0-9]+(?:-[a-z0-9]+)*")
 
 def stage_evidence():
     """Prova do stage para a decisão humana: lista exata, numstat, check e hash."""
-    diff_code, diff = git("diff", "--cached", "--binary")
+    # O hash cobre os bytes crus de `git diff --cached --binary`, sem strip.
+    try:
+        raw = subprocess.run(["git", "diff", "--cached", "--binary"], cwd=cwd,
+                             capture_output=True, timeout=12, check=False)
+        diff_code, diff_bytes = raw.returncode, raw.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        diff_code, diff_bytes = 124, b""
+    evidence.append({"comando": "git diff --cached --binary", "exit_code": diff_code,
+                     "sha256_saida": hashlib.sha256(diff_bytes).hexdigest()})
     _, names = git("diff", "--cached", "--name-status")
     _, numstat = git("diff", "--cached", "--numstat")
     check_code, _ = git("diff", "--cached", "--check")
     return {"arquivos": names.splitlines(), "numstat": numstat.splitlines(),
-            "sha256_diff": hashlib.sha256(diff.encode()).hexdigest() if diff_code == 0 else None,
+            "sha256_diff": hashlib.sha256(diff_bytes).hexdigest() if diff_code == 0 else None,
             "check_exit": check_code, "inspecao": "git diff --cached"}
 
 
@@ -817,7 +826,7 @@ def day1_paths(paths):
 
 def analyze_day1(text):
     detail = {"operacao_efetiva": None, "executavel": None, "subcomando": None, "diretorio_alvo": str(cwd)}
-    if DAY1_META.search(text) or not text.startswith("git "):
+    if DAY1_META.search(text) or not text.startswith("git ") or text != text.strip():
         return detail, [DAY1_OUT + ": composição, wrapper ou caractere proibido"]
     try:
         argv = shlex.split(text)
@@ -869,7 +878,8 @@ def analyze_day1(text):
 
 STAGE = stage_evidence() if day1 else None
 if day1:
-    command_detail, command_problems = analyze_day1(command) if command else (
+    # Texto bruto de GG_COMMAND, antes do strip de need(): bordas e quebras bloqueiam.
+    command_detail, command_problems = analyze_day1(e.get("GG_COMMAND", "")) if command else (
         {"operacao_efetiva": None, "executavel": None, "subcomando": None, "diretorio_alvo": None}, [])
     declared = pathlib.Path(target) if target else None
     if declared is None or root is None or (declared if declared.is_absolute() else root / declared).resolve() != root:
