@@ -195,7 +195,7 @@ operação efetiva, o executável, o subcomando e o diretório-alvo.
 
 `GG_MODE=miguel-day1` troca a análise geral por uma allowlist fechada,
 comparada pelo argv completo do texto bruto de `GG_COMMAND` (sem espaço nas
-bordas, quebra de linha ou tabulação). Não há prefixo, substring nem abreviação; o que
+bordas; nenhuma quebra de linha, retorno ou tabulação, nem interna). Não há prefixo, substring nem abreviação; o que
 não coincidir exatamente com uma forma abaixo é `GG-BLOQUEADO`. As demais
 dimensões continuam valendo. `GG_TARGET` precisa ser a raiz (`.` ou o caminho
 absoluto dela); `GG_MAIN_AUTH` é ignorado; outro valor de `GG_MODE` bloqueia.
@@ -761,7 +761,7 @@ day1 = mode == "miguel-day1"
 if mode not in {"", "miguel-day1"}:
     block.append("modo do Git Guardian desconhecido: " + mode)
 DAY1_OUT = "comando fora da allowlist miguel-day1"
-DAY1_META = re.compile(r"[;&|<>`$\\(){}#\n\r]")
+DAY1_META = re.compile(r"[;&|<>`$\\(){}#\n\r\t\v\f]")
 DAY1_READ = {("status",), ("status", "--short"), ("diff",), ("diff", "--cached"),
              ("rev-parse", "HEAD"), ("rev-parse", "--show-toplevel"),
              ("rev-parse", "--abbrev-ref", "HEAD"), ("branch", "--show-current"),

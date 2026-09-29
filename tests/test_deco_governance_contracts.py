@@ -888,7 +888,8 @@ class GitGuardianDay1Test(GitGuardianRepoCase):
 
     def test_raw_command_text_is_checked_before_normalization(self) -> None:
         for command in ("git status\n", "\ngit status", " git status", "git status ", "\tgit status",
-                        "git status\r", "git\tstatus"):
+                        "git status\r", "git\tstatus", "git \tstatus", "git status\t--short",
+                        "git log\t--oneline", "git status\v", "git status\f--short"):
             with self.subTest(command=repr(command)):
                 self.assert_blocked(command)
 
