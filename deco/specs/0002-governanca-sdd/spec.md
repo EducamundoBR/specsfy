@@ -1650,6 +1650,13 @@ aceito não foi contornado para satisfazer esse defeito do validador.
      rodada do mesmo gate no mesmo dia usa `-r02`, depois `-r03` e assim por
      diante; rodada encerrada não pode ser sobrescrita; `CURRENT` passa a apontar
      para a nova rodada.
+  Aplicação por T011 do item 3, que não altera a decisão: `estado.md` existe
+  em toda rodada; cada artefato de revisão é exigido a partir do estado em que
+  passa a existir — `review-request.md` desde `PRONTO PARA REVISÃO`;
+  `review-verdict.md` em `CORREÇÕES SOLICITADAS`, `PRONTO PARA RECONFERÊNCIA`,
+  `APROVADO` e `REPROVADO`; `correction-report.md` em
+  `PRONTO PARA RECONFERÊNCIA`. Divergência entre esta aplicação e a intenção da
+  decisão exige nova decisão humana.
   Mecanismo: `deco/skills/review-handoff/SKILL.md` (T011), com fixtures em
   `deco/fixtures/review-handoff/`. `Delivery Gate` continua `Pending`.
 

@@ -33,11 +33,11 @@ Layout aprovado por decisão humana de Deco no adendo de 29/09/2026 ao Plan Gate
     correction-report.md            implementador, quando houver achados
 ```
 
-Artefatos exigidos por estado: `review-request.md` a partir de
-`PRONTO PARA REVISÃO`; também `review-verdict.md` em `CORREÇÕES SOLICITADAS`,
-`APROVADO` e `REPROVADO`; também `correction-report.md` em
-`PRONTO PARA RECONFERÊNCIA`. `RASCUNHO` e `ENCERRADA SEM APROVAÇÃO` exigem só
-`estado.md`. O pacote é delta: referencia fontes estáveis por caminho e não cola
+Artefatos exigidos por estado, conforme a aplicação registrada no adendo:
+`estado.md` em toda rodada; `review-request.md` desde `PRONTO PARA REVISÃO`;
+`review-verdict.md` em `CORREÇÕES SOLICITADAS`, `PRONTO PARA RECONFERÊNCIA`,
+`APROVADO` e `REPROVADO`; `correction-report.md` em `PRONTO PARA RECONFERÊNCIA`.
+`RASCUNHO` e `ENCERRADA SEM APROVAÇÃO` exigem só `estado.md`. O pacote é delta: referencia fontes estáveis por caminho e não cola
 transcript nem histórico de conversa. A sessão nova recebe apenas o caminho e
 `CURRENT`.
 

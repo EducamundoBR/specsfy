@@ -488,6 +488,11 @@ class ReviewHandoffTest(unittest.TestCase):
     def test_plan_gate_addendum_is_recorded_without_rewriting_history(self) -> None:
         spec = (ROOT / "deco/specs/0002-governanca-sdd/spec.md").read_text(encoding="utf-8")
         self.assertRegex(spec, r"(?s)Adendo de 29/09/2026.{0,400}reviews/CURRENT.{0,1500}-r02")
+        addendum = spec[spec.index("Adendo de 29/09/2026"):spec.index("#### Gate do Ato III")]
+        self.assertRegex(addendum, r"(?s)Aplica[cç][aã]o por T011.{0,200}n[aã]o altera a decis[aã]o")
+        self.assertRegex(addendum, r"(?s)`review-request\.md`.{0,80}`PRONTO PARA REVISÃO`")
+        self.assertRegex(addendum, r"(?s)`review-verdict\.md`.{0,120}`APROVADO`")
+        self.assertRegex(addendum, r"(?s)`correction-report\.md`.{0,80}`PRONTO PARA RECONFERÊNCIA`")
         approval = (ROOT / "deco/specs/0002-governanca-sdd/reviews/plan-gate-2026-09-21/plan-gate-approval.md")
         self.assertNotIn("29/09/2026", approval.read_text(encoding="utf-8"))
         self.assertRegex(spec, r"nomes f[ií]sicos e\s+caminhos ser[aã]o definidos somente no Plan Gate")
