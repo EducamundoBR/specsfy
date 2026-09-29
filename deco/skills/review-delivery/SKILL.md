@@ -36,23 +36,27 @@ de qualquer execução ou trabalho.
 | Diff fora do escopo incluído do Contrato de Entrega | Achado P1. |
 | Testes declarados não executados, ou execução sem saída registrada | Achado P1. |
 | Evidências que não provam cada critério de aceite pelo mecanismo declarado | Achado P1 por critério. |
-| Regressão em teste antes verde, inclusive fora do escopo | Achado P1; estado `CORREÇÃO NECESSÁRIA`. |
+| Regressão em teste antes verde, inclusive fora do escopo | Achado P1; estado conforme a tabela de estados de entrega. |
 | Aderência à spec, às decisões e às restrições quebrada | Achado P1. |
 | Atualização documental devida ausente | Achado P2. |
 | Resíduo proibido presente ou rollback sem ponto de retorno verificado | Achado P1. |
 
 ## Estados de entrega
 
-`PRONTO`, `ENTREGUE` e `ACEITO` não são sinônimos e não se colapsam. Qualquer
-regressão leva a unidade a `CORREÇÃO NECESSÁRIA`; evidência material ausente
-não aprova e resulta em `CORREÇÕES SOLICITADAS`.
+`PRONTO`, `ENTREGUE` e `ACEITO` não são sinônimos e não se colapsam. Cada
+exceção preserva o estado em que a falha ocorreu; evidência material ausente
+não aprova e resulta em `CORREÇÕES SOLICITADAS`. Nenhum estado excepcional
+transita diretamente a `ACEITO`.
 
 | Condição | Resultado |
 | --- | --- |
 | Verificações internas verdes e evidência produzida, ainda na origem | `PRONTO`; nunca descrito como entregue ou aceito. |
 | Presença e alcance comprovados no destino declarado | `ENTREGUE`; ainda sem aceite. |
 | Aprovador designado conferiu no destino e registrou aceite explícito | `ACEITO`. |
-| Regressão detectada | `CORREÇÃO NECESSÁRIA`, com motivo e nova evidência para voltar a `PRONTO`. |
+| Regressão antes da entrega, a partir de `PRONTO` | `CORREÇÃO NECESSÁRIA`; volta a `PRONTO` só após correção, verificações internas verdes e nova evidência. |
+| Falha de presença ou alcance no destino | Não entra em `ENTREGUE`; permanece `PRONTO` até nova entrega comprovada. |
+| Reprovação após a entrega, a partir de `ENTREGUE` | `ENTREGUE COM CORREÇÕES`: volta à origem e, após verificações verdes, retorna a `PRONTO`, exigindo nova entrega. |
+| Regressão após o aceite, a partir de `ACEITO` | `ACEITE REVOGADO`; reabre como `CORREÇÃO NECESSÁRIA`, com motivo e nova evidência, e percorre `CORREÇÃO NECESSÁRIA` → `PRONTO` → `ENTREGUE` → `ACEITO`. |
 | Evidência material ausente para qualquer critério | Não aprova: `CORREÇÕES SOLICITADAS`. |
 | Validação humana antes do destino | Conta só como autorização para entrega, nunca como `ACEITO`. |
 

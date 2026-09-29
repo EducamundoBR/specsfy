@@ -21,6 +21,6 @@ Fixture sintética de SPEC-0002; sem dados reais.
 - **Gate resultante**: recomendado ao decisor; Plan Gate pendente até decisão humana
 - **Decisão humana**: pendente
 
-| ID | Severidade | Achado, evidência e correção |
-| --- | --- | --- |
-| P-1 | P3 | Nome de tarefa pouco descritivo; §14 T003; renomear sem mudar escopo. |
+| ID | Severidade P0–P3 | Fonte e trecho verificável | Impacto | Correção proposta |
+| --- | --- | --- | --- | --- |
+| P-1 | P3 | spec §14 T003: nome de tarefa pouco descritivo | leitura mais lenta do plano | renomear sem mudar escopo |

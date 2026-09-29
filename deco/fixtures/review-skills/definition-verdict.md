@@ -21,8 +21,8 @@ Fixture sintética de SPEC-0002; sem dados reais.
 - **Gate resultante**: Definition Gate pendente
 - **Decisão humana**: pendente
 
-| ID | Severidade | Achado, evidência e correção |
-| --- | --- | --- |
-| D-1 | P1 | Requisito FR-002 sem cenário BDD; spec §6; acrescentar cenário de aceite. |
-| D-2 | P1 | Dúvida aberta sobre fallback do nome muda comportamento; §2; registrar resposta. |
-| D-3 | P3 | Métrica de sucesso sem prazo; §1; declarar janela de medição. |
+| ID | Severidade P0–P3 | Fonte e trecho verificável | Impacto | Correção proposta |
+| --- | --- | --- | --- | --- |
+| D-1 | P1 | spec §6: FR-002 sem cenário BDD | requisito não verificável no aceite | acrescentar cenário de aceite de FR-002 |
+| D-2 | P1 | spec §2: dúvida aberta sobre fallback do nome | comportamento indefinido para visitante sem nome | registrar a resposta e o cenário correspondente |
+| D-3 | P3 | spec §1: métrica de sucesso sem prazo | medição ambígua | declarar a janela de medição |

@@ -81,12 +81,27 @@ def verdict_problems(text: str) -> list[str]:
         problems.append("veredito fora do vocabulário")
     if values.get("Revisor") and values.get("Revisor") == values.get("Implementador"):
         problems.append("revisor igual ao implementador")
+    header = next((line for line in template.splitlines() if line.startswith("| ID ")), "")
+    if header not in text.splitlines():
+        problems.append("tabela de achados fora do modelo")
+    columns = header.count("|") - 1
+    for row in finding_rows(text):
+        if len(row) != columns or not all(row):
+            problems.append("achado com célula ausente: " + " | ".join(row))
     return problems
 
 
+def finding_rows(text: str) -> list[list[str]]:
+    rows = []
+    for line in text.splitlines():
+        if re.match(r"^\|\s*[A-Z]-\d+\s*\|", line):
+            rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
+    return rows
+
+
 def findings(text: str) -> list[tuple[str, str]]:
-    """Linhas da tabela de achados: (severidade, descrição)."""
-    return re.findall(r"(?m)^\|\s*[A-Z0-9-]+\s*\|\s*(P[0-3])\s*\|\s*([^|]+)\|", text)
+    """Achados da tabela do modelo: (severidade, fonte, impacto e correção)."""
+    return [(row[1], " ".join(row[2:])) for row in finding_rows(text)]
 
 
 def fixture(name: str) -> str:
@@ -198,8 +213,24 @@ class ReviewDeliveryTest(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, text)
         self.assertRegex(text, r"(?s)n[aã]o s[aã]o sin[oô]nimos")
-        self.assertRegex(text, r"(?s)regress[aã]o.{0,160}CORREÇÃO NECESSÁRIA")
         self.assertRegex(text, r"(?s)evid[eê]ncia material ausente.{0,160}(?:n[aã]o aprova|CORREÇÕES SOLICITADAS)")
+        self.assertRegex(text, r"(?s)[Nn]enhum estado excepcional.{0,80}diretamente.{0,40}`ACEITO`")
+
+    def test_each_exceptional_transition_keeps_its_origin_state(self) -> None:
+        rows = [line for line in section(DELIVERY, "Estados de entrega").splitlines() if line.startswith("| ")]
+
+        def row(pattern: str) -> str:
+            found = [line for line in rows if re.search(pattern, line.split("|")[1], re.IGNORECASE)]
+            self.assertEqual(1, len(found), pattern)
+            return found[0]
+
+        self.assertRegex(row(r"regress[aã]o antes da entrega"), r"CORREÇÃO NECESSÁRIA")
+        self.assertRegex(row(r"presen[cç]a ou alcance"), r"(?i)n[aã]o entra em `ENTREGUE`")
+        delivered = row(r"reprova[cç][aã]o ap[oó]s a entrega")
+        self.assertRegex(delivered, r"`ENTREGUE COM CORREÇÕES`.{0,120}origem.{0,120}`PRONTO`.{0,80}nova entrega")
+        accepted = row(r"regress[aã]o ap[oó]s o aceite")
+        self.assertRegex(accepted, r"`ACEITE REVOGADO`.{0,120}`CORREÇÃO NECESSÁRIA`.{0,120}motivo.{0,60}nova evid[eê]ncia")
+        self.assertRegex(accepted, r"`CORREÇÃO NECESSÁRIA` → `PRONTO` → `ENTREGUE` → `ACEITO`")
 
     def test_fixture_verdict_records_regression(self) -> None:
         text = fixture("delivery-verdict-regression.md")

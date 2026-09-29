@@ -21,8 +21,8 @@ Fixture sintética de SPEC-0002; sem dados reais.
 - **Gate resultante**: Plan Gate pendente
 - **Decisão humana**: pendente
 
-| ID | Severidade | Achado, evidência e correção |
-| --- | --- | --- |
-| P-1 | P1 | Dependência cíclica T004 → T006 → T004; §15; quebrar o ciclo movendo T006 para depois de T004. |
-| P-2 | P1 | Lacuna: AC-005 sem tarefa nem teste; §12; incluir tarefa e teste RED. |
-| P-3 | P2 | Escopo adiado sem decisão registrada; §8; registrar decisão e dono. |
+| ID | Severidade P0–P3 | Fonte e trecho verificável | Impacto | Correção proposta |
+| --- | --- | --- | --- | --- |
+| P-1 | P1 | spec §15: dependência cíclica T004 → T006 → T004 | ordem de execução impossível | quebrar o ciclo movendo T006 para depois de T004 |
+| P-2 | P1 | spec §12: lacuna, AC-005 sem tarefa nem teste | AC sem cobertura | incluir tarefa e teste RED para AC-005 |
+| P-3 | P2 | spec §8: escopo adiado sem decisão registrada | escopo implícito | registrar decisão e dono do adiamento |

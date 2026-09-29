@@ -21,7 +21,7 @@ Fixture sintética de SPEC-0002; sem dados reais.
 - **Gate resultante**: Delivery Gate pendente; unidade em CORREÇÃO NECESSÁRIA
 - **Decisão humana**: pendente
 
-| ID | Severidade | Achado, evidência e correção |
-| --- | --- | --- |
-| E-1 | P1 | Regressão: teste de rota inicial passou a falhar após o diff; saída do runner anexada; corrigir e produzir nova evidência. |
-| E-2 | P2 | Atualização documental devida ausente em docs/; Contrato de Entrega campo 12; atualizar. |
+| ID | Severidade P0–P3 | Fonte e trecho verificável | Impacto | Correção proposta |
+| --- | --- | --- | --- | --- |
+| E-1 | P1 | saída do runner: teste de rota inicial falha após o diff | regressão antes da entrega; unidade em CORREÇÃO NECESSÁRIA | corrigir, rodar verificações e produzir nova evidência |
+| E-2 | P2 | Contrato de Entrega, campo 12: docs/ sem atualização | documentação diverge do código | atualizar a documentação devida |
