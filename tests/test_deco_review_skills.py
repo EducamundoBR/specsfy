@@ -350,6 +350,38 @@ def next_round_name(reviews: Path, gate: str, date: str) -> str:
     return f"{base}-r{max(numbers, default=1) + 1:02d}"
 
 
+WRITE_UNLOCK = HANDOFF_FIXTURES / "write-unlock"
+
+
+def write_unlock_problems(case: Path) -> list[str]:
+    """Regra de AC-035/FR-002: escrita de risco alto só após o plano revisado e aprovado."""
+    unit = case / "unidade.md"
+    risk = verdict_fields(unit.read_text(encoding="utf-8")).get("Risco", "") if unit.is_file() else ""
+    if risk not in {"ALTO", "CRÍTICO"}:
+        return ["risco ausente ou fora de alto e crítico"]
+    plan = case / "plano"
+    state = round_state(plan) if plan.is_dir() else ""
+    verdict_file = plan / "review-verdict.md"
+    verdict = verdict_fields(verdict_file.read_text(encoding="utf-8")).get("Veredito", "") if verdict_file.is_file() else ""
+    problems = []
+    if not state:
+        problems.append("revisão do plano ausente")
+    elif not verdict:
+        problems.append("plano sem revisão concluída")
+    elif (state == "APROVADO") != (verdict == "APROVADO"):
+        problems.append("evidência contraditória")
+    elif state != "APROVADO":
+        problems.append("plano não aprovado")
+    if risk == "CRÍTICO":
+        gate = case / "gate-humano.md"
+        values = verdict_fields(gate.read_text(encoding="utf-8")) if gate.is_file() else {}
+        if not gate.is_file():
+            problems.append("gate humano ausente")
+        elif values.get("Decisão humana") != "APROVADA" or not values.get("Pessoa") or not values.get("Data"):
+            problems.append("gate humano incompleto")
+    return problems
+
+
 class ReviewHandoffTest(unittest.TestCase):
     """T011: criação, validação, correção e encerramento de rodada."""
 
@@ -415,6 +447,28 @@ class ReviewHandoffTest(unittest.TestCase):
                      r"-r02", r"n[aã]o pode ser sobrescrita"):
             with self.subTest(rule=rule):
                 self.assertRegex(text, rf"(?i){rule}")
+
+    def test_high_risk_write_requires_reviewed_plan_and_critical_human_gate(self) -> None:
+        text = section(HANDOFF, "AC-035")
+        self.assertRegex(text, r"(?s)escrita.{0,120}somente depois.{0,120}revis[aã]o do plano.{0,120}`APROVADO`")
+        self.assertRegex(text, r"(?s)pedido.{0,80}n[aã]o (?:desbloqueia|basta)")
+        self.assertRegex(text, r"(?s)cr[ií]tico.{0,160}gate humano.{0,160}(?:registrad|pessoa)")
+        self.assertRegex(text, r"(?s)ausente, incompleta ou contradit[oó]ria.{0,80}bloque")
+        cases = {
+            "alto-pedido-sem-revisao": ["plano sem revisão concluída"],
+            "alto-plano-aprovado": [],
+            "alto-plano-correcoes": ["plano não aprovado"],
+            "alto-contraditorio": ["evidência contraditória"],
+            "critico-sem-gate": ["gate humano ausente"],
+            "critico-gate-incompleto": ["gate humano incompleto"],
+            "critico-completo": [],
+            "risco-ausente": ["risco ausente ou fora de alto e crítico"],
+        }
+        for name, expected in cases.items():
+            with self.subTest(fixture=name):
+                case = ROOT / WRITE_UNLOCK / name
+                self.assertTrue(case.is_dir(), f"fixture ausente: {name}")
+                self.assertEqual(expected, write_unlock_problems(case))
 
     def test_plan_gate_addendum_is_recorded_without_rewriting_history(self) -> None:
         spec = (ROOT / "deco/specs/0002-governanca-sdd/spec.md").read_text(encoding="utf-8")

@@ -116,12 +116,24 @@ com o motivo e a indicação "substituída por <nova rodada>" acrescentados ao
 
 Para unidade de risco alto ou crítico, um Review Request do plano é gravado
 antes da escrita, e outro Review Request do resultado é gravado
-depois da escrita. Os dois pedidos são artefatos em instantes distintos da mesma unidade,
-cada um em sua própria rodada.
+depois da escrita. Os dois pedidos são artefatos em instantes distintos
+da mesma unidade, cada um em sua própria rodada.
+
+A escrita fica bloqueada e só é liberada somente depois da revisão do plano
+concluída como `APROVADO`: a rodada do plano em estado `APROVADO` e o Review
+Verdict do plano com veredito `APROVADO`. O pedido de revisão, sozinho, não
+desbloqueia a escrita. Para risco crítico, exige-se também o gate humano
+aplicável antes da escrita, registrado com decisão, pessoa e data. Evidência
+ausente, incompleta ou contraditória mantém a escrita bloqueada.
 
 | Condição | Resultado |
 | --- | --- |
-| Unidade de risco alto sem Review Request do plano antes da escrita | Bloquear a escrita até o pedido do plano existir. |
+| Risco da unidade não registrado | Bloquear; classificar pelo `review-router` antes. |
+| Risco alto ou crítico com Review Request do plano, mas sem Verdict | Bloquear a escrita: o pedido não basta. |
+| Rodada do plano e Verdict do plano ambos `APROVADO` (risco alto) | Liberar a escrita. |
+| Verdict do plano com `CORREÇÕES SOLICITADAS` ou `REPROVADO` | Bloquear a escrita até nova revisão aprovada. |
+| Estado da rodada e veredito do plano divergentes | Bloquear: evidência contraditória. |
+| Risco crítico sem gate humano registrado, ou sem decisão, pessoa ou data | Bloquear a escrita mesmo com o plano aprovado. |
 | Resultado de risco alto sem Review Request próprio depois da escrita | Recusar o fechamento; gravar o pedido do resultado. |
 | Um único Review Request cobrindo plano e resultado | Recusar; separar em dois artefatos. |
 
@@ -157,7 +169,8 @@ sobre base diferente da declarada.
 
 ## Evidência
 
-Fixtures de ponteiro e layout em `deco/fixtures/review-handoff/`. Base
+Fixtures de ponteiro e layout em `deco/fixtures/review-handoff/` e de desbloqueio
+da escrita em risco alto ou crítico em `deco/fixtures/review-handoff/write-unlock/`. Base
 divergente e proveniência ausente são exercitadas pelas fixtures de T006 em
 `deco/fixtures/review-round/`: `request-divergent-branch.md` e
 `request-divergent-head.md` (AC-037), `request-unregistered-session.md` e
