@@ -1,9 +1,8 @@
-"""SPEC-0002/T007–T010: obrigações das skills de revisão além de AC-001–AC-027.
+"""SPEC-0002/T007: obrigações do roteador além dos contratos AC-001–AC-010.
 
 Os contratos AC-001–AC-010 vivem em `test_deco_governance_contracts.py`. Esta
-suíte cobre os achados da revisão independente do roteador e as verificações
-próprias de T008, T009 e T010 (achados priorizados, não autoaprovação,
-dependências cíclicas, estados de entrega) com fixtures de Review Verdict.
+suíte cobre somente os achados da revisão independente do roteador. As
+verificações de T008, T009 e T010 serão acrescentadas por essas tarefas.
 """
 
 from __future__ import annotations
