@@ -60,6 +60,7 @@ deco/
 ├── skills/
 │   ├── fechar-sessao-deco/SKILL.md    procedimento do contrato de handoff
 │   ├── git-guardian/SKILL.md          preflight Git executável (SPEC-0002/T004)
+│   ├── review-router/SKILL.md         risco, gate, skill, perfis e papéis (SPEC-0002/T007)
 │   └── session-guardian/SKILL.md      abertura e fechamento de sessão (SPEC-0002/T005)
 ├── templates/
 │   ├── HANDOFF.md                     ponteiro para o snapshot ativo
