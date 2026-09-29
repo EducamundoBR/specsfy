@@ -12,6 +12,7 @@ fixtures de Review Verdict conferidas contra o modelo de T006. T011
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import unittest
 from pathlib import Path
@@ -93,16 +94,6 @@ def verdict_problems(text: str) -> list[str]:
         elif row[1] not in {"P0", "P1", "P2", "P3"}:
             problems.append("severidade fora de P0–P3: " + row[1])
     return problems
-
-
-def request_problems(text: str) -> list[str]:
-    """Confere um Review Request contra os campos obrigatórios do modelo de T006."""
-    template = (ROOT / Path("deco/templates/review-request.md")).read_text(encoding="utf-8")
-    required = [name for name, value in FIELD.findall(template) if value == "<preencher>"]
-    values = verdict_fields(text)
-    return [f"campo ausente ou vazio: {name}" for name in required
-            if not values.get(name) or values[name] == "<preencher>"
-            or re.search(r"(?i)n[aã]o registrado", values[name])]
 
 
 def finding_rows(text: str) -> list[list[str]]:
@@ -363,6 +354,15 @@ def next_round_name(reviews: Path, gate: str, date: str) -> str:
 WRITE_UNLOCK = HANDOFF_FIXTURES / "write-unlock"
 
 
+def t006_rounds_module():
+    """Carrega o validador de T006 do próprio módulo de testes, sem duplicar a regra."""
+    spec = importlib.util.spec_from_file_location(
+        "deco_governance_rounds_t006", ROOT / "tests/test_deco_governance_rounds.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def write_unlock_problems(case: Path) -> list[str]:
     """Regra de AC-035/FR-002: escrita de risco alto só após o plano revisado e aprovado."""
     unit = case / "unidade.md"
@@ -384,8 +384,20 @@ def write_unlock_problems(case: Path) -> list[str]:
         problems.append("evidência contraditória")
     elif state != "APROVADO":
         problems.append("plano não aprovado")
-    elif request_problems(request_text) or verdict_problems(verdict_file.read_text(encoding="utf-8")):
-        problems.append("artefatos do plano fora do contrato de T006")
+    else:
+        rounds = t006_rounds_module()
+        observed_file = case / "base-observada.md"
+        observed = verdict_fields(observed_file.read_text(encoding="utf-8")) if observed_file.is_file() else {}
+        verdict_text = verdict_file.read_text(encoding="utf-8")
+        checks = [
+            rounds.validate_round_artifact(
+                template, text, observed_head=observed.get("HEAD", ""),
+                observed_branch=observed.get("Branch", ""), request=request_text,
+            )
+            for template, text in ((rounds.REVIEW_REQUEST, request_text), (rounds.REVIEW_VERDICT, verdict_text))
+        ]
+        if not observed or any(checks) or verdict_problems(verdict_text):
+            problems.append("artefatos do plano fora do contrato de T006")
     if risk == "CRÍTICO":
         gate = case / "gate-humano.md"
         values = verdict_fields(gate.read_text(encoding="utf-8")) if gate.is_file() else {}
@@ -472,6 +484,9 @@ class ReviewHandoffTest(unittest.TestCase):
             "alto-pedido-sem-revisao": ["plano sem revisão concluída"],
             "alto-plano-aprovado": [],
             "alto-artefatos-incompletos": ["artefatos do plano fora do contrato de T006"],
+            "alto-verdict-nao-registrado": ["artefatos do plano fora do contrato de T006"],
+            "alto-mesma-sessao": ["artefatos do plano fora do contrato de T006"],
+            "alto-branch-divergente": ["artefatos do plano fora do contrato de T006"],
             "alto-plano-correcoes": ["plano não aprovado"],
             "alto-contraditorio": ["evidência contraditória"],
             "critico-sem-gate": ["gate humano ausente"],
