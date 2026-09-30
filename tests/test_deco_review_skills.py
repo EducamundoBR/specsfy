@@ -115,7 +115,13 @@ def normalized(line: str) -> str:
 
 LINK = re.compile(r"""!?\[([^\]]*)\](?:\(\s*(?:<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)"""
                   r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)|\[[^\]]*\])""")
-TAG = re.compile(r"""<!--.*?-->|<[A-Za-z/!?](?:"[^"]*"|'[^']*'|[^'">])*>""")
+ATTRIBUTE = r"""\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?"""
+TAG = re.compile(  # HTML inline do CommonMark: comentário, CDATA, instrução, declaração, abertura e fechamento
+    rf"""<!--.*?-->|<!\[CDATA\[.*?\]\]>|<\?.*?\?>|<![A-Za-z][^>]*>"""
+    rf"""|<[A-Za-z][A-Za-z0-9-]*(?:{ATTRIBUTE})*\s*/?>|</[A-Za-z][A-Za-z0-9-]*\s*>""")
+PARTIAL_TAG = re.compile(  # construção HTML que pode continuar na linha seguinte
+    rf"""<!--(?!.*-->)|<!\[CDATA\[(?!.*\]\]>)|<\?(?!.*\?>)"""
+    rf"""|</?[A-Za-z][A-Za-z0-9-]*(?:{ATTRIBUTE})*(?:\s+[A-Za-z_:][\w.:-]*\s*=\s*(?:'[^']*|"[^"]*)?)?\s*$""")
 
 
 def without_markup(line: str) -> str:
@@ -126,9 +132,10 @@ def without_markup(line: str) -> str:
 
 
 def ambiguous_markup(line: str) -> bool:
-    """Fail-closed: link ou tag que não fecha de forma determinável deixa a apresentação indeterminada."""
+    """Fail-closed: link não resolvido ou HTML que pode continuar na linha seguinte deixa a apresentação
+    indeterminada. `<` que não forma tag é texto literal (como `a<b`)."""
     rest = without_markup(line)
-    return re.search(r"\]\(|<(?:[A-Za-z/!?])", rest) is not None
+    return "](" in rest or PARTIAL_TAG.search(rest) is not None
 
 
 def rendered(line: str) -> str:
@@ -995,7 +1002,7 @@ class ReviewHandoffTest(unittest.TestCase):
                                "link por referência": "[P][r]1", "link com parênteses": "[P](docs/item(v2).md)1",
                                "atributo com >": 'P<span title=">">1</span>', "atributo com > em aspas simples":
                                "P<span title='>'>1</span>", "link de apresentação indeterminada": "[P](a(b(c)))1",
-                               "tag sem fechamento": "P<span 1",
+                               "tag partida entre linhas": "P<span\ntitle='x'>1", "comentário aberto": "P<!--\n-->1",
                                "referência abreviada": "[P]1", "referência recolhida": "[P][]1"}.items():
             for tail in (f"\n## Achados complementares\n\n{severity}: contrato crítico aberto\n",
                          f"\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| contrato | {severity} aberto |\n"):
@@ -1012,6 +1019,9 @@ class ReviewHandoffTest(unittest.TestCase):
         nested = ("\n## Testes\n\n| Teste | Evidência |\n| --- | --- |\n| contrato | [detalhes](docs/item(v2)-P1.md) |\n"
                   "\nVer [detalhes](docs/item(v2)-P1.md \"título\") e <span title=\">P1\">nota</span>.\n")
         self.assertEqual([], verdict_problems(approved + nested))
+        literal = ("\n## Regras\n\n| Condição | Resultado |\n| --- | --- |\n| a<b | ok |\n"
+                   "\nQuando a<b, siga; P<span 1 aparece como texto literal.\n")
+        self.assertEqual([], verdict_problems(approved + literal))
 
     def test_spaced_or_disguised_severity_keeps_write_locked(self) -> None:
         approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
