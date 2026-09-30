@@ -113,13 +113,25 @@ def normalized(line: str) -> str:
     return " ".join(line.split())
 
 
+LINK = re.compile(r"""!?\[([^\]]*)\](?:\(\s*(?:<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)"""
+                  r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)|\[[^\]]*\])""")
+TAG = re.compile(r"""<!--.*?-->|<[A-Za-z/!?](?:"[^"]*"|'[^']*'|[^'">])*>""")
+
+
+def without_markup(line: str) -> str:
+    """Links e imagens reduzidos ao texto visível, definições de referência, comentários e tags omitidos."""
+    return TAG.sub("", LINK.sub(r"\1", re.sub(r"^\s*\[[^\]]+\]:\s*\S.*$", "", line)))
+
+
+def ambiguous_markup(line: str) -> bool:
+    """Fail-closed: link ou tag que não fecha de forma determinável deixa a apresentação indeterminada."""
+    rest = without_markup(line)
+    return re.search(r"\]\(|<(?:[A-Za-z/!?])", rest) is not None
+
+
 def rendered(line: str) -> str:
-    """Texto como o Markdown o exibe: links e imagens reduzidos ao texto visível, definições de referência
-    omitidas, sem comentários, tags, marcas inline e escapes; entidades decodificadas."""
-    line = re.sub(r"^\s*\[[^\]]+\]:\s*\S.*$", "", line)
-    line = re.sub(r"!?\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])", r"\1", line)
-    line = html.unescape(re.sub(r"<!--.*?-->|<[^>]*>", "", line))
-    return normalized(re.sub(r"[*_`~\\]", "", line))
+    """Texto como o Markdown o exibe: sem marcação, marcas inline e escapes; entidades decodificadas."""
+    return normalized(re.sub(r"[*_`~\\]", "", html.unescape(without_markup(line))))
 
 
 def table_lines(text: str) -> tuple[list[str], int | None]:
@@ -190,6 +202,9 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
         heading = re.match(r"#{1,6}(?:\s|$)", line) is not None
         if heading:
             in_findings, same_section = FINDINGS_HEADING.match(line) is not None, False
+        if line not in template and ambiguous_markup(line):
+            unparsed.append(line)
+            continue
         if index and re.search(r"(?i)\bP$", rendered(lines[index - 1])) and re.match(r"\d", rendered(line)):
             unparsed.append(line)
             continue
@@ -975,7 +990,10 @@ class ReviewHandoffTest(unittest.TestCase):
                                "comentário HTML": "P<!-- x -->1", "tag HTML": "P<span>1</span>",
                                "código inline": "`P1`", "escape de barra": "P\\1",
                                "quebra de linha suave": "P\n1", "link": "[P](#)1", "imagem": "![P](x.png)1",
-                               "link por referência": "[P][r]1"}.items():
+                               "link por referência": "[P][r]1", "link com parênteses": "[P](docs/item(v2).md)1",
+                               "atributo com >": 'P<span title=">">1</span>', "atributo com > em aspas simples":
+                               "P<span title='>'>1</span>", "link de apresentação indeterminada": "[P](a(b(c)))1",
+                               "tag sem fechamento": "P<span 1"}.items():
             for tail in (f"\n## Achados complementares\n\n{severity}: contrato crítico aberto\n",
                          f"\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| contrato | {severity} aberto |\n"):
                 with self.subTest(case=name, tail=tail), tempfile.TemporaryDirectory() as tmp:
@@ -988,6 +1006,9 @@ class ReviewHandoffTest(unittest.TestCase):
         links = ("\n## Notas do revisor\n\nVer [relatório](docs/P1-contrato.md), ![diagrama](img/P0.png) e [notas][P1].\n"
                  "\n[P1]: docs/p1.md\n")
         self.assertEqual([], verdict_problems(approved + links))
+        nested = ("\n## Testes\n\n| Teste | Evidência |\n| --- | --- |\n| contrato | [detalhes](docs/item(v2)-P1.md) |\n"
+                  "\nVer [detalhes](docs/item(v2)-P1.md \"título\") e <span title=\">P1\">nota</span>.\n")
+        self.assertEqual([], verdict_problems(approved + nested))
 
     def test_spaced_or_disguised_severity_keeps_write_locked(self) -> None:
         approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
