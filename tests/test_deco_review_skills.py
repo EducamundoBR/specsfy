@@ -362,6 +362,15 @@ ARTIFACTS_BY_STATE = {
 }
 
 
+def t006_fields_filled(name: str, text: str) -> bool:
+    """Artefato completo: todo campo do modelo de T006 presente e preenchido (`NÃO REGISTRADO` persiste)."""
+    rounds = t006_rounds_module()
+    template = {"review-request.md": rounds.REVIEW_REQUEST, "review-verdict.md": rounds.REVIEW_VERDICT,
+                "correction-report.md": rounds.CORRECTION_REPORT}[name]
+    values = {field: " ".join(value.split()) for field, value in FIELD.findall(text)}
+    return all(values.get(field) not in {None, "", "<preencher>"} for field in rounds.template_fields(template))
+
+
 def current_problems(reviews: Path, gate: str) -> list[str]:
     """Aplica o layout aprovado no adendo de 29/09/2026 ao Plan Gate (fail-closed)."""
     rounds = sorted(path for path in reviews.iterdir() if path.is_dir() and not path.is_symlink())
@@ -373,6 +382,8 @@ def current_problems(reviews: Path, gate: str) -> list[str]:
             continue
         problems += [f"artefato ausente: {path.name}/{name}" for name in ARTIFACTS_BY_STATE[state]
                      if not (path / name).is_file()]
+        problems += [f"artefato fora do modelo de T006: {path.name}/{name}" for name in ARTIFACTS_BY_STATE[state]
+                     if (path / name).is_file() and not t006_fields_filled(name, (path / name).read_text(encoding="utf-8"))]
     if len([path for path in rounds if round_state(path) in ACTIVE]) > 1:
         problems.append("mais de uma rodada ativa")
     pointer = reviews / "CURRENT"
@@ -558,6 +569,24 @@ class ReviewHandoffTest(unittest.TestCase):
         existing = {path.name for path in reviews.iterdir()}
         self.assertNotIn(next_round_name(reviews, "plan", "2026-01-10"), existing)
         self.assertEqual("plan-2026-01-10-r02", (reviews / "CURRENT").read_text(encoding="utf-8").strip())
+
+    def test_required_artifacts_follow_t006_fields(self) -> None:
+        cases = {
+            "pedido só com placeholder": ("delivery-2026-01-20/review-request.md",
+                                          lambda text: "# review-request.md\n\nConteúdo completo nos modelos de T006.\n"),
+            "campo do pedido ausente": ("delivery-2026-01-20/review-request.md",
+                                        lambda text: re.sub(r"(?m)^- \*\*Testes\*\*: .*\n", "", text)),
+            "campo do parecer em branco": ("plan-2026-01-10/review-verdict.md",
+                                           lambda text: re.sub(r"(?m)^(- \*\*Session ID\*\*:) .*$", r"\1 <preencher>", text)),
+        }
+        for name, (artifact, change) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                reviews = Path(tmp) / "reviews"
+                shutil.copytree(ROOT / HANDOFF_FIXTURES / "valid" / "reviews", reviews)
+                self.assertEqual([], current_problems(reviews, "delivery"))
+                path = reviews / artifact
+                path.write_text(change(path.read_text(encoding="utf-8")), encoding="utf-8")
+                self.assertEqual([f"artefato fora do modelo de T006: {artifact}"], current_problems(reviews, "delivery"))
 
     def test_round_suffix_beyond_two_digits_is_never_reused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
