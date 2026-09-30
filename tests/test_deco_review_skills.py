@@ -349,7 +349,7 @@ def round_state(round_dir: Path) -> str:
     return values.get("Estado", "")
 
 
-ROUND_NAME = re.compile(r"(?P<gate>[a-z]+(?:-[a-z]+)*)-(?P<date>\d{4}-\d{2}-\d{2})(?:-r(?P<n>0[2-9]|[1-9]\d))?")
+ROUND_NAME = re.compile(r"(?P<gate>[a-z]+(?:-[a-z]+)*)-(?P<date>\d{4}-\d{2}-\d{2})(?:-r(?P<n>0[2-9]|[1-9]\d+))?")
 ARTIFACTS_BY_STATE = {
     "RASCUNHO": (),
     "PRONTO PARA REVISÃO": ("review-request.md",),
@@ -412,7 +412,7 @@ def next_round_name(reviews: Path, gate: str, date: str) -> str:
     """Nome da próxima rodada do gate no dia: base, depois -r02, -r03 etc., sem sobrescrever."""
     base = f"{gate}-{date}"
     taken = [path.name for path in reviews.iterdir()
-             if path.name == base or re.fullmatch(re.escape(base) + r"-r\d{2}", path.name)]
+             if path.name == base or re.fullmatch(re.escape(base) + r"-r\d{2,}", path.name)]
     if not taken:
         return base
     numbers = [int(name.rsplit("-r", 1)[1]) for name in taken if name != base]
@@ -558,6 +558,20 @@ class ReviewHandoffTest(unittest.TestCase):
         existing = {path.name for path in reviews.iterdir()}
         self.assertNotIn(next_round_name(reviews, "plan", "2026-01-10"), existing)
         self.assertEqual("plan-2026-01-10-r02", (reviews / "CURRENT").read_text(encoding="utf-8").strip())
+
+    def test_round_suffix_beyond_two_digits_is_never_reused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            reviews = Path(tmp)
+            for name in ("plan-2026-01-10", "plan-2026-01-10-r02", "plan-2026-01-10-r99"):
+                (reviews / name).mkdir()
+            self.assertEqual("plan-2026-01-10-r100", next_round_name(reviews, "plan", "2026-01-10"))
+            (reviews / "plan-2026-01-10-r100").mkdir()
+            self.assertEqual("plan-2026-01-10-r101", next_round_name(reviews, "plan", "2026-01-10"))
+            (reviews / "plan-2026-01-10-r100" / "estado.md").write_text("- **Estado**: RASCUNHO\n", encoding="utf-8")
+            for name in ("plan-2026-01-10", "plan-2026-01-10-r02", "plan-2026-01-10-r99"):
+                (reviews / name / "estado.md").write_text("- **Estado**: ENCERRADA SEM APROVAÇÃO\n", encoding="utf-8")
+            (reviews / "CURRENT").write_text("plan-2026-01-10-r100\n", encoding="utf-8")
+            self.assertEqual([], current_problems(reviews, "plan"))
 
     def test_skill_documents_approved_layout_and_fail_closed_rules(self) -> None:
         text = section(HANDOFF, "Layout físico da rodada")
