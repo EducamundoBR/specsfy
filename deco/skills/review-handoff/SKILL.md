@@ -134,7 +134,7 @@ ausente, incompleta ou contraditória mantém a escrita bloqueada.
 | Rodada do plano e Verdict do plano ambos `APROVADO` (risco alto) | Liberar a escrita. |
 | Verdict do plano com `CORREÇÕES SOLICITADAS` ou `REPROVADO` | Bloquear a escrita até nova revisão aprovada. |
 | Estado da rodada e veredito do plano divergentes | Bloquear: evidência contraditória. |
-| Verdict do plano `APROVADO` com achado P0 ou P1, ou com P2 cujo ID não aparece em `Condições` | Bloquear a escrita: o modelo de T006 exige `CORREÇÕES SOLICITADAS` para P0 e P1, e correção ou justificativa aceita para P2. |
+| Verdict do plano `APROVADO` com achado P0 ou P1, ou com P2 sem `<ID>: justificativa aceita` em `Condições` | Bloquear a escrita: o modelo de T006 exige `CORREÇÕES SOLICITADAS` para P0 e P1. P2 corrigido sai do Verdict na reconferência; correção pendente mantém o bloqueio. |
 | Review Request ou Verdict do plano de outra unidade, de outro risco ou de gate diferente do Plan Gate | Bloquear: a revisão não corresponde à unidade que será escrita. |
 | Request ou Verdict do plano fora dos contratos de T006, inclusive base observada divergente ou proveniência `NÃO REGISTRADO` | Bloquear a escrita. |
 | Risco crítico sem gate humano registrado, ou sem decisão, pessoa ou data de calendário real não posterior à escrita | Bloquear a escrita mesmo com o plano aprovado. |

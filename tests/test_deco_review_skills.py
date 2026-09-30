@@ -500,7 +500,9 @@ def write_unlock_problems(case: Path) -> list[str]:
             problems.append("revisão do plano não corresponde à unidade")
         elif any(severity in {"P0", "P1"} for severity, _ in findings(verdict_text)):
             problems.append("Verdict APROVADO com achado P0 ou P1")
-        elif any(row[1] == "P2" and not re.search(rf"(?<![\w-]){re.escape(row[0])}(?![\w-])", reviewed.get("Condições", ""))
+        elif any(row[1] == "P2" and not re.search(
+                     rf"(?i)(?<![\w-]){re.escape(row[0])}(?![\w-])\s*[:—–-]?\s*justificativa aceita\b",
+                     normalized(reviewed.get("Condições", "")))
                  for row in finding_rows(verdict_text)):
             problems.append("Verdict APROVADO com achado P2 sem correção ou justificativa aceita")
     if risk == "CRÍTICO":
@@ -812,14 +814,22 @@ class ReviewHandoffTest(unittest.TestCase):
         self.assertEqual(["Verdict APROVADO com achado P2 sem correção ou justificativa aceita"],
                          write_unlock_problems(case))
         verdict = (case / "plano/review-verdict.md").read_text(encoding="utf-8")
-        for name, condition in {"justificativa aceita": "P-2: justificativa aceita pelo revisor; rollback coberto em T013",
-                                "correção exigida": "corrigir P-2 antes da escrita"}.items():
+        blocked = ["Verdict APROVADO com achado P2 sem correção ou justificativa aceita"]
+        conditions = {
+            "justificativa aceita": ("P-2: justificativa aceita pelo revisor; rollback coberto em T013", []),
+            "justificativa aceita sem pontuação": ("P-2 justificativa aceita, risco residual registrado", []),
+            "correção pendente": ("corrigir P-2 antes da escrita", blocked),
+            "ID citado sem aceite": ("P-2 em análise; justificativa aceita para outro ponto", blocked),
+            "aceite de outro achado": ("P-20: justificativa aceita", blocked),
+            "aceite negado": ("P-2: justificativa não aceita", blocked),
+        }
+        for name, (condition, expected) in conditions.items():
             with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
                 accepted = Path(tmp) / "caso"
                 shutil.copytree(case, accepted)
                 (accepted / "plano/review-verdict.md").write_text(
                     verdict.replace("- **Condições**: nenhuma", f"- **Condições**: {condition}"), encoding="utf-8")
-                self.assertEqual([], write_unlock_problems(accepted))
+                self.assertEqual(expected, write_unlock_problems(accepted))
 
     def test_critical_gate_dated_after_the_write_keeps_write_locked(self) -> None:
         complete = ROOT / WRITE_UNLOCK / "critico-completo"
