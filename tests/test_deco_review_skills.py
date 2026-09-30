@@ -744,8 +744,8 @@ class ReviewHandoffTest(unittest.TestCase):
 
     def test_spaced_or_disguised_severity_keeps_write_locked(self) -> None:
         approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
-        for name, severity in {"espaço": "P 1", "tabulação": "P\t1", "espaço não separável": "P 1",
-                               "largura zero": "P​1", "largura total": "Ｐ１"}.items():
+        for name, severity in {"espaço": "P 1", "tabulação": "P\t1", "espaço não separável": "P\u00a01",
+                               "largura zero": "P\u200b1", "largura total": "\uff30\uff11"}.items():
             for tail in (f"\n## Notas do revisor\n\n{severity} escondido depois do cabeçalho\n",
                          f"\n## Notas do revisor\n\n| P-2 | {severity} | fonte | impacto |\n"):
                 with self.subTest(case=name, tail=tail), tempfile.TemporaryDirectory() as tmp:
