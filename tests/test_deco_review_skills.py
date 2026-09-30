@@ -572,6 +572,8 @@ def result_request_problems(case: Path) -> list[str]:
         return ["pedido do resultado de outra unidade"]
     if normalized(result.get("Risco", "")).upper() != normalized(unit.get("Risco", "")).upper():
         return ["pedido do resultado com risco divergente da unidade"]
+    if normalized(result.get("Risco", "")).upper() != normalized(planned.get("Risco", "")).upper():
+        return ["pedido do resultado com risco divergente do plano"]
     if not re.fullmatch(r"(?i)delivery(?: gate)?", result.get("Gate", "")):
         return ["pedido do resultado fora do Delivery Gate"]
     if result.get("Base") != planned.get("HEAD"):
@@ -837,6 +839,17 @@ class ReviewHandoffTest(unittest.TestCase):
                     if base is not None:
                         (case / "resultado/base-observada.md").write_text(base, encoding="utf-8")
                 self.assertEqual(expected, result_request_problems(case))
+        with tempfile.TemporaryDirectory() as tmp:
+            case = Path(tmp) / "caso"
+            shutil.copytree(source, case)
+            unit = case / "unidade.md"
+            unit.write_text(unit.read_text(encoding="utf-8").replace("- **Risco**: ALTO", "- **Risco**: CRÍTICO"),
+                            encoding="utf-8")
+            (case / "resultado").mkdir()
+            (case / "resultado/review-request.md").write_text(
+                result.replace("- **Risco**: alto", "- **Risco**: crítico"), encoding="utf-8")
+            (case / "resultado/base-observada.md").write_text(observed, encoding="utf-8")
+            self.assertEqual(["pedido do resultado com risco divergente do plano"], result_request_problems(case))
 
     def test_approved_verdict_with_untreated_p2_keeps_write_locked(self) -> None:
         case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p2-sem-condicao"
