@@ -5,8 +5,8 @@ Fixture sintética de T011; sem dados reais. Campos conforme o modelo de T006.
 - **Unidade**: SPEC-9999 — página de boas-vindas
 - **CURRENT**: reviews/plan-2026-01-10
 - **Review Request**: reviews/plan-2026-01-10/review-request.md
-- **Base e HEAD observados**: bbbbbbb / aaaaaaa
-- **Escopo do diff conferido**: bbbbbbb..aaaaaaa
+- **Base e HEAD observados**: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb / aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- **Escopo do diff conferido**: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb..aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 - **Implementador**: agente-implementador
 - **Revisor**: agente-revisor
 - **Decisor**: pessoa-decisora

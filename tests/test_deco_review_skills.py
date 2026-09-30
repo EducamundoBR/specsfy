@@ -972,6 +972,14 @@ class ReviewHandoffTest(unittest.TestCase):
                 path = case / name
                 path.write_text(path.read_text(encoding="utf-8").replace("a" * 40, "f" * 40), encoding="utf-8")
             self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        with tempfile.TemporaryDirectory() as tmp:  # mesmo prefixo de sete dígitos, HEAD diferente
+            case = Path(tmp) / "caso"
+            shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+            for name in ("plano/review-request.md", "base-observada.md"):
+                path = case / name
+                path.write_text(path.read_text(encoding="utf-8").replace("a" * 40, "aaaaaaa" + "f" * 33),
+                                encoding="utf-8")
+            self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
 
     def test_duplicated_fields_keep_write_locked(self) -> None:
         source = ROOT / WRITE_UNLOCK / "critico-completo"

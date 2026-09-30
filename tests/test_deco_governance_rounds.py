@@ -167,8 +167,8 @@ def verdict_structure_problems(text: str) -> list[str]:
 
 
 def same_commit(declared: str, full: str) -> bool:
-    """SHA declarado, abreviado ou completo (7 a 40 dígitos hexadecimais), que é prefixo do SHA do Request."""
-    return re.fullmatch(r"[0-9a-f]{7,40}", declared) is not None and full.startswith(declared)
+    """SHA completo (40 ou 64 dígitos hexadecimais), idêntico ao do Request; abreviado não vincula."""
+    return re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", declared) is not None and declared == full
 
 
 def verdict_matches_request(values: dict[str, str], requested: dict[str, str]) -> bool:
@@ -471,8 +471,11 @@ class GovernanceRoundsTest(unittest.TestCase):
             "mesma base, HEAD e diff": (request, valid, []),
             "HEAD do pedido mudou": (request.replace("a" * 40, "f" * 40), valid, mismatch),
             "base do pedido mudou": (request.replace("b" * 40, "e" * 40), valid, mismatch),
-            "diff conferido divergente": (request, valid.replace("bbbbbbb..aaaaaaa", "bbbbbbb..ccccccc"), mismatch),
-            "base e HEAD sem SHA": (request, valid.replace("bbbbbbb / aaaaaaa", "base / topo"), mismatch),
+            "diff conferido divergente": (request, valid.replace("b" * 40 + ".." + "a" * 40, "b" * 40 + ".." + "c" * 40),
+                                          mismatch),
+            "base e HEAD sem SHA": (request, valid.replace("b" * 40 + " / " + "a" * 40, "base / topo"), mismatch),
+            "SHA abreviado": (request, valid.replace("b" * 40 + " / " + "a" * 40, "bbbbbbb / aaaaaaa"), mismatch),
+            "prefixo comum de outro HEAD": (request.replace("a" * 40, "aaaaaaa" + "f" * 33), valid, mismatch),
         }
         for name, (req, verdict, expected) in cases.items():
             with self.subTest(case=name):

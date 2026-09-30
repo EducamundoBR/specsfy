@@ -5,8 +5,8 @@ Fixture sintética de SPEC-0002; sem dados reais.
 - **Unidade**: SPEC-9999 — definição da página de boas-vindas
 - **CURRENT**: reviews/rodada-1
 - **Review Request**: reviews/rodada-1/review-request.md
-- **Base e HEAD observados**: bbbbbbb / aaaaaaa
-- **Escopo do diff conferido**: bbbbbbb..aaaaaaa
+- **Base e HEAD observados**: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb / aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+- **Escopo do diff conferido**: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb..aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 - **Implementador**: agente-implementador
 - **Revisor**: agente-revisor
 - **Decisor**: pessoa-decisora
