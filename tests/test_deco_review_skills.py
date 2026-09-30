@@ -119,8 +119,10 @@ TAG = re.compile(r"""<!--.*?-->|<[A-Za-z/!?](?:"[^"]*"|'[^']*'|[^'">])*>""")
 
 
 def without_markup(line: str) -> str:
-    """Links e imagens reduzidos ao texto visível, definições de referência, comentários e tags omitidos."""
-    return TAG.sub("", LINK.sub(r"\1", re.sub(r"^\s*\[[^\]]+\]:\s*\S.*$", "", line)))
+    """Links, imagens e colchetes restantes (referência abreviada ou texto literal) reduzidos ao texto
+    visível; definições de referência, comentários e tags omitidos."""
+    line = LINK.sub(r"\1", re.sub(r"^\s*\[[^\]]+\]:\s*\S.*$", "", line))
+    return TAG.sub("", re.sub(r"\[([^\[\]]*)\](?!\()", r"\1", line))
 
 
 def ambiguous_markup(line: str) -> bool:
@@ -993,7 +995,8 @@ class ReviewHandoffTest(unittest.TestCase):
                                "link por referência": "[P][r]1", "link com parênteses": "[P](docs/item(v2).md)1",
                                "atributo com >": 'P<span title=">">1</span>', "atributo com > em aspas simples":
                                "P<span title='>'>1</span>", "link de apresentação indeterminada": "[P](a(b(c)))1",
-                               "tag sem fechamento": "P<span 1"}.items():
+                               "tag sem fechamento": "P<span 1",
+                               "referência abreviada": "[P]1", "referência recolhida": "[P][]1"}.items():
             for tail in (f"\n## Achados complementares\n\n{severity}: contrato crítico aberto\n",
                          f"\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| contrato | {severity} aberto |\n"):
                 with self.subTest(case=name, tail=tail), tempfile.TemporaryDirectory() as tmp:
