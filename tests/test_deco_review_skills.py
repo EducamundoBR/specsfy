@@ -530,6 +530,25 @@ def calendar_date(value: str) -> date | None:
     return None
 
 
+def result_request_problems(case: Path) -> list[str]:
+    """AC-035: o resultado de risco alto tem Review Request próprio, gravado depois da escrita."""
+    request = case / "resultado" / "review-request.md"
+    if not request.is_file():
+        return ["resultado sem Review Request próprio"]
+    plan = case / "plano" / "review-request.md"
+    text = request.read_text(encoding="utf-8")
+    result, planned = verdict_fields(text), verdict_fields(plan.read_text(encoding="utf-8"))
+    unit = verdict_fields((case / "unidade.md").read_text(encoding="utf-8"))
+    if (request.is_symlink() or request.resolve() == plan.resolve() or text == plan.read_text(encoding="utf-8")
+            or re.fullmatch(r"(?i)plan(?: gate)?", result.get("Gate", "")) or result.get("HEAD") == planned.get("HEAD")):
+        return ["um único Review Request para plano e resultado"]
+    if result.get("Unidade") != unit.get("Unidade"):
+        return ["pedido do resultado de outra unidade"]
+    if not t006_fields_filled("review-request.md", text):
+        return ["pedido do resultado fora do modelo de T006"]
+    return []
+
+
 class ReviewHandoffTest(unittest.TestCase):
     """T011: criação, validação, correção e encerramento de rodada."""
 
@@ -731,6 +750,40 @@ class ReviewHandoffTest(unittest.TestCase):
                 (copy / "gate-humano.md").write_text(gate.replace("2026-01-10", value), encoding="utf-8")
                 self.assertEqual(["gate humano sem data válida"], write_unlock_problems(copy))
         self.assertEqual([], write_unlock_problems(complete))
+
+    def test_high_risk_result_needs_its_own_request_after_the_write(self) -> None:
+        text = section(HANDOFF, "AC-035")
+        self.assertRegex(text, r"(?m)^\| Resultado de risco alto sem Review Request próprio depois da escrita \| Recusar o fechamento")
+        self.assertRegex(text, r"(?m)^\| Um único Review Request cobrindo plano e resultado \| Recusar; separar em dois artefatos")
+        source = ROOT / WRITE_UNLOCK / "alto-plano-aprovado"
+        plan = (source / "plano/review-request.md").read_text(encoding="utf-8")
+        result = (plan.replace("- **Gate**: Plan", "- **Gate**: Delivery")
+                  .replace("- **HEAD**: " + "a" * 40, "- **HEAD**: " + "c" * 40)
+                  .replace("- **Base**: " + "b" * 40, "- **Base**: " + "a" * 40))
+        cases = {
+            "pedido próprio do resultado": (result, []),
+            "sem pedido do resultado": (None, ["resultado sem Review Request próprio"]),
+            "cópia do pedido do plano": (plan, ["um único Review Request para plano e resultado"]),
+            "link para o pedido do plano": ("link", ["um único Review Request para plano e resultado"]),
+            "mesmo HEAD do plano": (result.replace("c" * 40, "a" * 40), ["um único Review Request para plano e resultado"]),
+            "outra unidade": (result.replace("SPEC-9999 — plano da página de boas-vindas", "SPEC-9998 — outra unidade"),
+                              ["pedido do resultado de outra unidade"]),
+            "campo em branco": (re.sub(r"(?m)^(- \*\*Testes\*\*:) .*$", r"\1 <preencher>", result),
+                                ["pedido do resultado fora do modelo de T006"]),
+        }
+        self.assertNotEqual(plan, result)
+        for name, (content, expected) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                case = Path(tmp) / "caso"
+                shutil.copytree(source, case)
+                if content is not None:
+                    (case / "resultado").mkdir()
+                    request = case / "resultado/review-request.md"
+                    if content == "link":
+                        request.symlink_to(case / "plano/review-request.md")
+                    else:
+                        request.write_text(content, encoding="utf-8")
+                self.assertEqual(expected, result_request_problems(case))
 
     def test_approved_verdict_with_untreated_p2_keeps_write_locked(self) -> None:
         case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p2-sem-condicao"
