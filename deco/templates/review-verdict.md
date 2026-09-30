@@ -84,4 +84,6 @@ sem interpretar a apresentação do Markdown.
   nenhuma posição, nem mesmo colado a letras, e não terminam em `P`.
 - Texto simples e valores de campo não começam com recuo, citação, marcador de
   lista ou sublinhado de título.
+- As linhas são separadas só por LF ou CRLF; qualquer outro separador de linha
+  bloqueia o artefato inteiro.
 - Qualquer outra linha bloqueia a aprovação e a liberação da escrita.

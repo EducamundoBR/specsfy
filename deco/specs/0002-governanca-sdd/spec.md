@@ -1689,8 +1689,9 @@ aceito não foi contornado para satisfazer esse defeito do validador.
      quebra suave juntaria ao dígito seguinte). Em texto e valores de campo,
      também as linhas iniciadas por recuo,
      citação, marcador de lista, lista numerada ou sublinhado de título. Também
-     são rejeitados cabeçalho fora do modelo, campo fora do modelo, segundo título
-     e qualquer tabela além da canônica. Toda linha rejeitada bloqueia a aprovação
+     são rejeitados cabeçalho fora do modelo, campo fora do modelo, segundo título,
+     qualquer tabela além da canônica e separador de linha fora de LF ou CRLF, que
+     também bloqueia Review Request e Correction Report. Toda linha rejeitada bloqueia a aprovação
      e a liberação da escrita (fail-closed); a apresentação do Markdown não é
      interpretada.
   4. **Impacto e compatibilidade**: as fixtures de T006, das skills de gate e de

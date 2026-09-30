@@ -83,6 +83,7 @@ def template_fields(template: Path) -> list[str]:
 VERDICT_TABLE_HEADER = "| ID | Severidade P0–P3 | Fonte e trecho verificável | Impacto | Correção proposta |"
 TABLE_SEPARATOR = re.compile(r"\|(?: ?:?-+:? ?\|)+")
 MARKUP = re.compile(r"""[\[\]<>`*~$\\]|&(?:#\d+|#[xX][0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]*);|(?<![^\W_])_|_(?![^\W_])""")
+IRREGULAR_BREAK = re.compile(r"[\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]|\r(?!\n)")  # só LF ou CRLF separam linhas
 BLOCK_START = re.compile(r"\s|[-+*>](?:\s|$)|\d{1,9}[.)](?:\s|$)|[=-]+$")
 
 
@@ -128,6 +129,8 @@ def verdict_structure_problems(text: str) -> list[str]:
                 and "<preencher>" not in line and line not in {VERDICT_TABLE_HEADER, separator}}
     fields = set(template_fields(REVIEW_VERDICT))
     problems, table, last_heading = [], "ausente", -1
+    if IRREGULAR_BREAK.search(text):
+        problems.append("Verdict com separador de linha fora de LF ou CRLF")
     lines = [raw.rstrip(" ") for raw in text.splitlines()]  # só o espaço comum final é neutro
     if not lines or not (lines[0].startswith("# ") and plain_text(lines[0][2:])):
         problems.append("Verdict sem título inicial")
@@ -185,6 +188,8 @@ def validate_round_artifact(
     values = dict(FIELD.findall(text))
     declared = [" ".join(name.split()) for name in DECLARED.findall(text)]
     problems = []
+    if template != REVIEW_VERDICT and IRREGULAR_BREAK.search(text):  # o Verdict acusa pelo contrato estrutural
+        problems.append("artefato com separador de linha fora de LF ou CRLF")
     for field in template_fields(template):
         value = " ".join(values.get(field, "").split())
         if declared.count(field) > 1:
@@ -473,6 +478,19 @@ class GovernanceRoundsTest(unittest.TestCase):
             with self.subTest(case=name):
                 self.assertEqual(expected, validate_round_artifact(
                     REVIEW_VERDICT, verdict, observed_head="a" * 40, observed_branch="fixture/rodada", request=req))
+
+    def test_artifacts_reject_line_breaks_other_than_lf_or_crlf(self) -> None:
+        request = self.round_fixture("request-valid.md")
+        verdict = self.round_fixture("verdict-valid.md")
+        hidden = request.replace("b" * 40, "b" * 40 + "\u2028- **Branch**: outra", 1)
+        self.assertIn("artefato com separador de linha fora de LF ou CRLF", validate_round_artifact(
+            REVIEW_REQUEST, hidden, observed_head="a" * 40, observed_branch="fixture/rodada", request=hidden))
+        self.assertIn("Verdict com separador de linha fora de LF ou CRLF", validate_round_artifact(
+            REVIEW_VERDICT, verdict.replace("\n- **Veredito**", "\u2028- **Veredito**"), observed_head="a" * 40,
+            observed_branch="fixture/rodada", request=request))
+        self.assertEqual([], validate_round_artifact(
+            REVIEW_REQUEST, request.replace("\n", "\r\n"), observed_head="a" * 40, observed_branch="fixture/rodada",
+            request=request))
 
     def test_duplicated_field_is_rejected_instead_of_last_value_winning(self) -> None:
         unlock = ROOT / "deco/fixtures/review-handoff/write-unlock"

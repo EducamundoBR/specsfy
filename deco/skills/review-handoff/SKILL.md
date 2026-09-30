@@ -57,7 +57,7 @@ Regras fail-closed de `CURRENT`:
 | Destino existe, mas não é pasta | Bloquear. |
 | Nome fora de `<gate>-<AAAA-MM-DD>[-rNN]` ou de gate diferente do gate esperado | Bloquear: rodada incompatível com o gate esperado. |
 | Artefato exigido pelo estado da rodada ausente | Bloquear. |
-| Artefato exigido sem campo do modelo de T006, com campo duplicado, vazio ou `<preencher>`, ou Verdict de rodada ativa fora do contrato estrutural (rodada encerrada não é revalidada) | Bloquear: artefato fora do modelo; `NÃO REGISTRADO` persiste e é tratado no fechamento. |
+| Artefato exigido sem campo do modelo de T006, com separador de linha fora de LF ou CRLF, com campo duplicado, vazio ou `<preencher>`, ou Verdict de rodada ativa fora do contrato estrutural (rodada encerrada não é revalidada) | Bloquear: artefato fora do modelo; `NÃO REGISTRADO` persiste e é tratado no fechamento. |
 | Destino é pasta de rodada ativa do gate esperado, com artefatos completos | Prosseguir, após conferir branch e HEAD. |
 
 Colisão no mesmo dia:

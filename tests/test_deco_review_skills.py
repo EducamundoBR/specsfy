@@ -334,7 +334,8 @@ def t006_fields_filled(name: str, text: str, structural: bool = True) -> bool:
     template = {"review-request.md": rounds.REVIEW_REQUEST, "review-verdict.md": rounds.REVIEW_VERDICT,
                 "correction-report.md": rounds.CORRECTION_REPORT}[name]
     values = {field: " ".join(value.split()) for field, value in verdict_fields(text).items()}
-    return (all(values.get(field) not in {None, "", "<preencher>"} for field in rounds.template_fields(template))
+    return (not rounds.IRREGULAR_BREAK.search(text)
+            and all(values.get(field) not in {None, "", "<preencher>"} for field in rounds.template_fields(template))
             and (not structural or name != "review-verdict.md" or not rounds.verdict_structure_problems(text)))
 
 
@@ -595,6 +596,8 @@ class ReviewHandoffTest(unittest.TestCase):
                                          lambda text: text.replace("- **HEAD**: ", "- **HEAD**: " + "d" * 40 + "\n- **HEAD**: ", 1)),
             "veredito duplicado com recuo": ("plan-2026-01-10/review-verdict.md",
                                              lambda text: text + "  - **Veredito**: REPROVADO\n"),
+            "branch contraditória após U+2028": ("delivery-2026-01-20/review-request.md",
+                                                 lambda text: text.replace("b" * 40, "b" * 40 + "\u2028- **Branch**: outra", 1)),
         }
         for name, (artifact, change) in cases.items():
             with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
@@ -782,6 +785,10 @@ class ReviewHandoffTest(unittest.TestCase):
         structural = {
             "sem título inicial": approved[approved.index("\n") + 1:],
             "linha em branco antes do título": "\n" + approved,
+            **{f"veredito contraditório após {name}": approved.replace(
+                "- **Evidências**: leitura integral", f"- **Evidências**: leitura{sep}- **Veredito**: REPROVADO{sep}integral")
+               for name, sep in {"U+2028": "\u2028", "U+2029": "\u2029", "U+0085": "\x85", "FF": "\x0c",
+                                 "VT": "\x0b", "CR isolado": "\r"}.items()},
             "tabulação final em texto": approved + "\nNota do revisor sem ressalvas.\t\n",
             "cabeçalho sem separador no fim": approved[:approved.index(separator)],
             "cabeçalho sem separador antes de texto": approved[:approved.index(separator)] + "\nNota do revisor.\n",
@@ -796,11 +803,15 @@ class ReviewHandoffTest(unittest.TestCase):
         for name, text in structural.items():
             with self.subTest(estrutura=name), tempfile.TemporaryDirectory() as tmp:
                 self.assertTrue([problem for problem in verdict_problems(text) if problem.startswith(
-                    ("linha fora do contrato do Verdict", "Verdict sem título inicial"))], "estrutura fora do modelo passou")
+                    ("linha fora do contrato do Verdict", "Verdict sem título inicial", "Verdict com separador de linha"))],
+                    "estrutura fora do modelo passou")
                 case = Path(tmp) / "caso"
                 shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
                 (case / "plano/review-verdict.md").write_text(text, encoding="utf-8")
-                self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+                # a leitura em modo texto converte CR isolado em LF: o Veredito duplicado fica vazio e bloqueia
+                expected = ("plano sem revisão concluída" if name.endswith("CR isolado")
+                            else "artefatos do plano fora do contrato de T006")
+                self.assertEqual([expected], write_unlock_problems(case))
         ordered = (approved.replace("- **Unidade**", "## Identificação e proveniência\n\n- **Unidade**")
                    .replace("- **Evidências**", "\n## Evidência e achados\n\n- **Evidências**")
                    .replace("- **Veredito**", "\n## Parecer e encaminhamento\n\n- **Veredito**"))
