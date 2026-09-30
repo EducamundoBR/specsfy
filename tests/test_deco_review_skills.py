@@ -12,6 +12,7 @@ fixtures de Review Verdict conferidas contra o modelo de T006. T011
 
 from __future__ import annotations
 
+import html
 import importlib.util
 import re
 import shutil
@@ -112,6 +113,12 @@ def normalized(line: str) -> str:
     return " ".join(line.split())
 
 
+def rendered(line: str) -> str:
+    """Texto como o Markdown o exibe: sem comentários, tags, marcas inline e escapes; entidades decodificadas."""
+    line = html.unescape(re.sub(r"<!--.*?-->|<[^>]*>", "", line))
+    return normalized(re.sub(r"[*_`~\\]", "", line))
+
+
 def table_lines(text: str) -> tuple[list[str], int | None]:
     """Linhas normalizadas e posição do cabeçalho da tabela de achados."""
     lines = [normalized(line) for line in text.splitlines()]
@@ -167,7 +174,7 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
 
     def cites_severity(line: str) -> bool:
         field = re.fullmatch(r"- \*\*.+?\*\*: (.*)", line)
-        return line not in template and re.search(r"(?i)\bP\s*\d+\b", field.group(1) if field else line) is not None
+        return line not in template and re.search(r"(?i)\bP\s*\d+\b", rendered(field.group(1) if field else line)) is not None
 
     end = table_end(lines, start)
     rows, unparsed, in_findings, same_section, foreign_table = [], [], False, False, False
@@ -178,6 +185,9 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
         heading = re.match(r"#{1,6}(?:\s|$)", line) is not None
         if heading:
             in_findings, same_section = FINDINGS_HEADING.match(line) is not None, False
+        if index and re.search(r"(?i)\bP$", rendered(lines[index - 1])) and re.match(r"\d", rendered(line)):
+            unparsed.append(line)
+            continue
         if "|" not in line:
             if cites_severity(line):
                 unparsed.append(line)
@@ -187,7 +197,7 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
             header = [cell.lower() for cell in cells(line)]
             foreign_table = (index + 1 < len(lines) and re.fullmatch(SEPARATOR, lines[index + 1]) is not None
                              and header[0] != "id" and not any("severidade" in cell for cell in header))
-        shaped = ((in_table and not foreign_table) or any(re.match(r"(?i)P\s*\d", cell) for cell in cells(line))
+        shaped = ((in_table and not foreign_table) or any(re.match(r"(?i)P\s*\d", rendered(cell)) for cell in cells(line))
                   or cites_severity(line))
         if in_findings and not same_section and not heading and line.startswith("|"):
             if not line.startswith("| ID ") and not re.fullmatch(SEPARATOR, line):
@@ -929,6 +939,23 @@ class ReviewHandoffTest(unittest.TestCase):
             with self.subTest(case=name):
                 self.assertTrue([problem for problem in verdict_problems(approved + tail)
                                  if problem.startswith("linha de achado não interpretável")])
+
+    def test_severity_hidden_by_markup_keeps_write_locked(self) -> None:
+        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        for name, severity in {"entidade decimal": "&#80;1", "entidade hexadecimal": "&#x50;1",
+                               "entidades nos dois caracteres": "&#80;&#49;", "negrito": "**P**1",
+                               "comentário HTML": "P<!-- x -->1", "tag HTML": "P<span>1</span>",
+                               "código inline": "`P1`", "escape de barra": "P\\1",
+                               "quebra de linha suave": "P\n1"}.items():
+            for tail in (f"\n## Achados complementares\n\n{severity}: contrato crítico aberto\n",
+                         f"\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| contrato | {severity} aberto |\n"):
+                with self.subTest(case=name, tail=tail), tempfile.TemporaryDirectory() as tmp:
+                    self.assertTrue([problem for problem in verdict_problems(approved + tail)
+                                     if problem.startswith("linha de achado não interpretável")])
+                    case = Path(tmp) / "caso"
+                    shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+                    (case / "plano/review-verdict.md").write_text(approved + tail, encoding="utf-8")
+                    self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
 
     def test_spaced_or_disguised_severity_keeps_write_locked(self) -> None:
         approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
