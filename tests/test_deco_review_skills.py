@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import shutil
+import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 
@@ -484,7 +487,20 @@ def write_unlock_problems(case: Path) -> list[str]:
             problems.append("gate humano incompleto")
         elif person.upper().startswith(("NÃO REGISTRADO", "<PREENCHER>")):
             problems.append("gate humano sem pessoa registrada")
+        elif not calendar_date(" ".join(values["Data"].split())):
+            problems.append("gate humano sem data válida")
     return problems
+
+
+def calendar_date(value: str) -> bool:
+    """Data do gate humano: somente data de calendário real, em ISO ou DD/MM/AAAA."""
+    for pattern in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            datetime.strptime(value, pattern)
+            return True
+        except ValueError:
+            pass
+    return False
 
 
 class ReviewHandoffTest(unittest.TestCase):
@@ -642,6 +658,20 @@ class ReviewHandoffTest(unittest.TestCase):
                                ("critico-gate-pessoa-espacada", "gate humano sem pessoa registrada")):
             with self.subTest(ciclo7=name):
                 self.assertEqual([expected], write_unlock_problems(ROOT / WRITE_UNLOCK / name))
+
+    def test_critical_gate_without_valid_date_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "critico-gate-data-nao-registrada"
+        self.assertTrue(case.is_dir(), "fixture ausente: critico-gate-data-nao-registrada")
+        self.assertEqual(["gate humano sem data válida"], write_unlock_problems(case))
+        complete = ROOT / WRITE_UNLOCK / "critico-completo"
+        gate = (complete / "gate-humano.md").read_text(encoding="utf-8")
+        for value in ("  NÃO REGISTRADO", "<preencher>", "2026-13-45", "ontem", "2026-01-10 talvez"):
+            with self.subTest(data=value), tempfile.TemporaryDirectory() as tmp:
+                copy = Path(tmp) / "caso"
+                shutil.copytree(complete, copy)
+                (copy / "gate-humano.md").write_text(gate.replace("2026-01-10", value), encoding="utf-8")
+                self.assertEqual(["gate humano sem data válida"], write_unlock_problems(copy))
+        self.assertEqual([], write_unlock_problems(complete))
 
     def test_blocking_finding_declared_outside_table_keeps_write_locked(self) -> None:
         case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1-em-texto"
