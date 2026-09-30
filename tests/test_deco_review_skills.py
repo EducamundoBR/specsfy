@@ -16,6 +16,7 @@ import importlib.util
 import re
 import shutil
 import tempfile
+import unicodedata
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -100,9 +101,15 @@ def verdict_problems(text: str) -> list[str]:
     return problems
 
 
+def normalized(line: str) -> str:
+    """NFKC, sem caracteres invisíveis de formatação e com espaços colapsados."""
+    line = "".join(char for char in unicodedata.normalize("NFKC", line) if unicodedata.category(char) != "Cf")
+    return " ".join(line.split())
+
+
 def table_lines(text: str) -> tuple[list[str], int | None]:
     """Linhas normalizadas e posição do cabeçalho da tabela de achados."""
-    lines = [" ".join(line.split()) for line in text.splitlines()]
+    lines = [normalized(line) for line in text.splitlines()]
     start = next((index for index, line in enumerate(lines) if line.startswith("| ID ")), None)
     return lines, start
 
@@ -149,11 +156,11 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
     lines, start = table_lines(text)
     if start is None:
         return [], []
-    template = {" ".join(line.split()) for line in (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8").splitlines()}
+    template = {normalized(line) for line in (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8").splitlines()}
 
     def cites_severity(line: str) -> bool:
         field = re.fullmatch(r"- \*\*.+?\*\*: (.*)", line)
-        return line not in template and re.search(r"(?i)\bP\d+\b", field.group(1) if field else line) is not None
+        return line not in template and re.search(r"(?i)\bP\s*\d+\b", field.group(1) if field else line) is not None
 
     end, columns = table_end(lines, start), len(cells(lines[start]))
     rows, unparsed, in_findings, same_section = [], [], False, False
@@ -168,7 +175,7 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
             if cites_severity(line):
                 unparsed.append(line)
             continue
-        shaped = (len(cells(line)) == columns or any(re.match(r"(?i)P\d", cell) for cell in cells(line))
+        shaped = (len(cells(line)) == columns or any(re.match(r"(?i)P\s*\d", cell) for cell in cells(line))
                   or cites_severity(line))
         if in_findings and not same_section and not heading and line.startswith("|"):
             if not line.startswith("| ID ") and not re.fullmatch(SEPARATOR, line):
@@ -734,6 +741,20 @@ class ReviewHandoffTest(unittest.TestCase):
         template = (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8")
         prose = template[template.index("Usar `Nenhum`"):template.index("## Parecer")]
         self.assertEqual([], verdict_problems(approved + "\n" + prose))
+
+    def test_spaced_or_disguised_severity_keeps_write_locked(self) -> None:
+        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        for name, severity in {"espaço": "P 1", "tabulação": "P\t1", "espaço não separável": "P 1",
+                               "largura zero": "P​1", "largura total": "Ｐ１"}.items():
+            for tail in (f"\n## Notas do revisor\n\n{severity} escondido depois do cabeçalho\n",
+                         f"\n## Notas do revisor\n\n| P-2 | {severity} | fonte | impacto |\n"):
+                with self.subTest(case=name, tail=tail), tempfile.TemporaryDirectory() as tmp:
+                    self.assertTrue([problem for problem in verdict_problems(approved + tail)
+                                     if problem.startswith("linha de achado não interpretável")])
+                    case = Path(tmp) / "caso"
+                    shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+                    (case / "plano/review-verdict.md").write_text(approved + tail, encoding="utf-8")
+                    self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
 
     def test_plan_gate_addendum_is_recorded_without_rewriting_history(self) -> None:
         spec = (ROOT / "deco/specs/0002-governanca-sdd/spec.md").read_text(encoding="utf-8")
