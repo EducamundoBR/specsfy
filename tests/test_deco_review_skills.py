@@ -73,8 +73,13 @@ def frontmatter_name(path: Path) -> str:
     return match.group(1) if match else ""
 
 
+DECLARED = re.compile(r"(?m)^\s*[-*+]\s*\*\*(.+?)\*\*\s*:")
+
+
 def verdict_fields(text: str) -> dict[str, str]:
-    return dict(FIELD.findall(text))
+    """Campos `- **Nome**: valor`; campo declarado mais de uma vez fica vazio (fail-closed)."""
+    declared = [" ".join(name.split()) for name in DECLARED.findall(text)]
+    return {name: "" if declared.count(name) > 1 else value for name, value in FIELD.findall(text)}
 
 
 def verdict_problems(text: str) -> list[str]:
@@ -741,6 +746,27 @@ class ReviewHandoffTest(unittest.TestCase):
         template = (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8")
         prose = template[template.index("Usar `Nenhum`"):template.index("## Parecer")]
         self.assertEqual([], verdict_problems(approved + "\n" + prose))
+
+    def test_duplicated_fields_keep_write_locked(self) -> None:
+        source = ROOT / WRITE_UNLOCK / "critico-completo"
+        cases = {
+            "veredito do plano": ("plano/review-verdict.md", "- **Veredito**: APROVADO",
+                                  "- **Veredito**: CORREÇÕES SOLICITADAS\n- **Veredito**: APROVADO"),
+            "estado da rodada": ("plano/estado.md", "- **Estado**: APROVADO",
+                                 "- **Estado**: CORREÇÕES SOLICITADAS\n- **Estado**: APROVADO"),
+            "risco da unidade": ("unidade.md", "- **Risco**: CRÍTICO", "- **Risco**: BAIXO\n- **Risco**: CRÍTICO"),
+            "decisão humana": ("gate-humano.md", "- **Decisão humana**: APROVADA",
+                               "- **Decisão humana**: REPROVADA\n  - **Decisão humana**: APROVADA"),
+        }
+        self.assertEqual([], write_unlock_problems(source))
+        for name, (artifact, old, new) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                case = Path(tmp) / "caso"
+                shutil.copytree(source, case)
+                text = (case / artifact).read_text(encoding="utf-8")
+                self.assertIn(old, text)
+                (case / artifact).write_text(text.replace(old, new), encoding="utf-8")
+                self.assertTrue(write_unlock_problems(case), "campo duplicado liberou a escrita")
 
     def test_spaced_or_disguised_severity_keeps_write_locked(self) -> None:
         approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")

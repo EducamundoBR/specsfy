@@ -70,6 +70,7 @@ def contract_checks(
 
 
 FIELD = re.compile(r"(?m)^- \*\*(.+?)\*\*: (.*?)\s*$")
+DECLARED = re.compile(r"(?m)^\s*[-*+]\s*\*\*(.+?)\*\*\s*:")
 VERDICTS = {"APROVADO", "CORREÇÕES SOLICITADAS", "REPROVADO"}
 
 
@@ -83,10 +84,13 @@ def validate_round_artifact(
 ) -> list[str]:
     """Confere um artefato preenchido contra os campos obrigatórios do modelo."""
     values = dict(FIELD.findall(text))
+    declared = [" ".join(name.split()) for name in DECLARED.findall(text)]
     problems = []
     for field in template_fields(template):
         value = " ".join(values.get(field, "").split())
-        if field not in values:
+        if declared.count(field) > 1:
+            problems.append(f"campo duplicado: {field}")
+        elif field not in values:
             problems.append(f"campo ausente: {field}")
         elif not value or value == "<preencher>":
             problems.append(f"campo não preenchido: {field}")
@@ -330,6 +334,26 @@ class GovernanceRoundsTest(unittest.TestCase):
             with self.subTest(case=name):
                 self.assertEqual(expected, validate_round_artifact(
                     REVIEW_VERDICT, text, observed_head=observed["HEAD"],
+                    observed_branch=observed["Branch"], request=request,
+                ))
+
+    def test_duplicated_field_is_rejected_instead_of_last_value_winning(self) -> None:
+        unlock = ROOT / "deco/fixtures/review-handoff/write-unlock"
+        observed = dict(FIELD.findall((unlock / "alto-plano-aprovado/base-observada.md").read_text(encoding="utf-8")))
+        request = (unlock / "alto-plano-aprovado/plano/review-request.md").read_text(encoding="utf-8")
+        verdict = (unlock / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        corrections = verdict.replace("- **Veredito**: APROVADO", "- **Veredito**: CORREÇÕES SOLICITADAS\n- **Veredito**: APROVADO")
+        indented = verdict.replace("- **Veredito**: APROVADO", "- **Veredito**: APROVADO\n  - **Veredito**: REPROVADO")
+        branches = request.replace("- **Branch**: fixture/rodada", "- **Branch**: outra/branch\n- **Branch**: fixture/rodada")
+        cases = {
+            "veredito contraditório": (REVIEW_VERDICT, corrections, ["campo duplicado: Veredito"]),
+            "veredito duplicado com recuo": (REVIEW_VERDICT, indented, ["campo duplicado: Veredito"]),
+            "branch contraditória": (REVIEW_REQUEST, branches, ["campo duplicado: Branch"]),
+        }
+        for name, (template, text, expected) in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(expected, validate_round_artifact(
+                    template, text, observed_head=observed["HEAD"],
                     observed_branch=observed["Branch"], request=request,
                 ))
 
