@@ -140,10 +140,18 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
     com `|` é não interpretável. Fora dela, tabelas de outras finalidades (como a de condições do
     parecer) são ignoradas, salvo linha com a forma de achado: mesmo número de colunas do modelo
     ou célula iniciada por severidade `P<n>`. Na seção da tabela, depois dela, vale a regra anterior.
+    Achado só existe em tabela: severidade `P<n>` citada em texto, lista ou valor de campo, fora de
+    linha idêntica ao modelo de T006, também é não interpretável.
     """
     lines, start = table_lines(text)
     if start is None:
         return [], []
+    template = {" ".join(line.split()) for line in (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8").splitlines()}
+
+    def cites_severity(line: str) -> bool:
+        field = re.fullmatch(r"- \*\*.+?\*\*: (.*)", line)
+        return line not in template and re.search(r"(?i)\bP\d+\b", field.group(1) if field else line) is not None
+
     end, columns = table_end(lines, start), len(cells(lines[start]))
     rows, unparsed, in_findings, same_section = [], [], False, False
     for index, line in enumerate(lines):
@@ -154,8 +162,11 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
         if heading:
             in_findings, same_section = FINDINGS_HEADING.match(line) is not None, False
         if "|" not in line:
+            if cites_severity(line):
+                unparsed.append(line)
             continue
-        shaped = len(cells(line)) == columns or any(re.match(r"(?i)P\d", cell) for cell in cells(line))
+        shaped = (len(cells(line)) == columns or any(re.match(r"(?i)P\d", cell) for cell in cells(line))
+                  or cites_severity(line))
         if in_findings and not same_section and not heading and line.startswith("|"):
             if not line.startswith("| ID ") and not re.fullmatch(SEPARATOR, line):
                 rows.append(cells(line))
@@ -631,6 +642,25 @@ class ReviewHandoffTest(unittest.TestCase):
                                ("critico-gate-pessoa-espacada", "gate humano sem pessoa registrada")):
             with self.subTest(ciclo7=name):
                 self.assertEqual([expected], write_unlock_problems(ROOT / WRITE_UNLOCK / name))
+
+    def test_blocking_finding_declared_outside_table_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1-em-texto"
+        self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p1-em-texto")
+        self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        blocked = {
+            "campo Achados P0-P3": approved.replace("ver tabela, em ordem de severidade", "P1 em T004; demais na tabela"),
+            "texto após novo cabeçalho": approved + "\n## Achados complementares\n\nP-2 P1 tarefa sem critério\n",
+            "lista em outra seção": approved + "\n## Notas do revisor\n\n- P1: tarefa T004 sem critério\n",
+            "tabulação": approved + "\n\tp0 — escrita sem plano\n",
+        }
+        for name, text in blocked.items():
+            with self.subTest(case=name):
+                self.assertTrue([problem for problem in verdict_problems(text)
+                                 if problem.startswith("linha de achado não interpretável")])
+        template = (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8")
+        prose = template[template.index("Usar `Nenhum`"):template.index("## Parecer")]
+        self.assertEqual([], verdict_problems(approved + "\n" + prose))
 
     def test_plan_gate_addendum_is_recorded_without_rewriting_history(self) -> None:
         spec = (ROOT / "deco/specs/0002-governanca-sdd/spec.md").read_text(encoding="utf-8")
