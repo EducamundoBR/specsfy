@@ -118,9 +118,41 @@ LINK = re.compile(r"""!?\[([^\]]*)\]\(\s*(?:<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)""
 REFERENCE = re.compile(r"!?\[([^\[\]]*)\](?:\[([^\[\]]*)\])?(?!\()")
 
 
+LIST_ITEM = re.compile(r" {0,3}(?:[-+*]|\d{1,9}[.)])(?:\s|$)")
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+
+
+def code_lines(text: str) -> set[int]:
+    """Índices das linhas de bloco de código cercado ou recuado, que o Markdown exibe literalmente."""
+    code, fence, in_list, indented, blank = set(), "", False, False, True
+    for index, line in enumerate(line.expandtabs(4) for line in text.splitlines()):
+        indent = len(line) - len(line.lstrip(" "))
+        if fence:
+            code.add(index)
+            if re.fullmatch(rf" {{0,3}}{re.escape(fence[0])}{{{len(fence)},}}\s*", line):
+                fence = ""
+        elif match := FENCE.match(line):
+            fence = match.group(1)
+            code.add(index)
+        elif not line.strip():
+            blank = True
+        elif indent >= 4 and (indented or (blank and not in_list)):
+            indented, blank = True, False
+            code.add(index)
+        else:  # na dúvida, é lista (não código): a lista só termina em linha sem recuo após linha em branco
+            if LIST_ITEM.match(line):
+                in_list = True
+            elif blank and indent == 0:
+                in_list = False
+            indented = blank = False
+    return code
+
+
 def reference_labels(text: str) -> frozenset[str]:
-    """Rótulos com definição `[rótulo]: destino` no documento; só eles transformam colchetes em link."""
-    return frozenset(normalized(label).lower() for label in re.findall(r"(?m)^\s*\[([^\]]+)\]:\s*\S", text))
+    """Rótulos com definição `[rótulo]: destino` fora de código; só eles transformam colchetes em link."""
+    code = code_lines(text)
+    return frozenset(normalized(match.group(1)).lower() for index, line in enumerate(text.splitlines())
+                     if index not in code and (match := re.match(r"\s*\[([^\]]+)\]:\s*\S", line)))
 ATTRIBUTE = r"""\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?"""
 TAG = re.compile(  # HTML inline do CommonMark: comentário, CDATA, instrução, declaração, abertura e fechamento
     rf"""<!--.*?-->|<!\[CDATA\[.*?\]\]>|<\?.*?\?>|<![A-Za-z][^>]*>"""
@@ -207,7 +239,7 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
     if start is None:
         return [], []
     template = {normalized(line) for line in (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8").splitlines()}
-    labels = reference_labels(text)
+    labels, code = reference_labels(text), code_lines(text)
 
     def cites_severity(line: str) -> bool:
         field = re.fullmatch(r"- \*\*.+?\*\*: (.*)", line)
@@ -219,6 +251,10 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
         if start <= index < end:
             continue
         same_section = same_section or index == end
+        if index in code:  # código é exibido literalmente: a severidade escrita nele é visível
+            if re.search(r"(?i)\bP\s*\d+\b", line):
+                unparsed.append(line)
+            continue
         heading = re.match(r"#{1,6}(?:\s|$)", line) is not None
         if heading:
             in_findings, same_section = FINDINGS_HEADING.match(line) is not None, False
@@ -1040,6 +1076,31 @@ class ReviewHandoffTest(unittest.TestCase):
         literal = ("\n## Regras\n\n| Condição | Resultado |\n| --- | --- |\n| a<b | ok |\n"
                    "\nQuando a<b, siga; P<span 1 aparece como texto literal.\n")
         self.assertEqual([], verdict_problems(approved + literal))
+
+    def test_code_blocks_are_literal_for_findings_and_references(self) -> None:
+        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        literal = {
+            "definição em bloco cercado": "\n## Notas do revisor\n\nValor P[1] literal.\n\n```\n[1]: #\n```\n",
+            "definição em bloco recuado": "\n## Notas do revisor\n\nValor P[1] literal.\n\n    [1]: #\n",
+        }
+        for name, tail in literal.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                self.assertEqual([], verdict_problems(approved + tail))
+                case = Path(tmp) / "caso"
+                shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+                (case / "plano/review-verdict.md").write_text(approved + tail, encoding="utf-8")
+                self.assertEqual([], write_unlock_problems(case))
+        visible = {
+            "P1 exibido em bloco cercado": "\n## Notas do revisor\n\n~~~\n[P1]: contrato aberto\n~~~\n",
+            "P1 exibido em bloco recuado": "\n## Notas do revisor\n\ntexto\n\n    <b>P1</b> contrato aberto\n",
+            "definição em item de lista": "\n## Notas do revisor\n\n- item\n\n    [P]: #\n\n[P]1 contrato aberto\n",
+            "definição após continuação do item": "\n## Notas do revisor\n\n- item\n  continuação\n\n    [P]: #\n\n[P]1 aberto\n",
+            "definição após continuação preguiçosa": "\n## Notas do revisor\n\n- item\ncontinuação\n\n    [P]: #\n\n[P]1 aberto\n",
+        }
+        for name, tail in visible.items():
+            with self.subTest(case=name):
+                self.assertTrue([problem for problem in verdict_problems(approved + tail)
+                                 if problem.startswith("linha de achado não interpretável")])
 
     def test_spaced_or_disguised_severity_keeps_write_locked(self) -> None:
         approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
