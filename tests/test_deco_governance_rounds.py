@@ -7,6 +7,7 @@ também exige os dois modelos preenchíveis previstos pelo Plan Gate.
 from __future__ import annotations
 
 import re
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -79,6 +80,61 @@ def template_fields(template: Path) -> list[str]:
     return [name for name, value in FIELD.findall(content) if value == "<preencher>"]
 
 
+VERDICT_TABLE_HEADER = "| ID | Severidade P0–P3 | Fonte e trecho verificável | Impacto | Correção proposta |"
+TABLE_SEPARATOR = re.compile(r"\|(?: ?:?-+:? ?\|)+")
+MARKUP = re.compile(r"""[\[\]<>`*~$\\]|&(?:#\d+|#[xX][0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]*);|(?<![^\W_])_|_(?![^\W_])""")
+BLOCK_START = re.compile(r"\s|[-+*>](?:\s|$)|\d{1,9}[.)](?:\s|$)|[=-]+$")
+
+
+def markup_free(value: str) -> bool:
+    """Sem marcação capaz de alterar a apresentação e sem caractere invisível de formatação."""
+    return MARKUP.search(value) is None and all(unicodedata.category(char) != "Cf" for char in value)
+
+
+def plain_text(value: str) -> bool:
+    """Texto simples do contrato estrutural: sem marcação, sem `|`, sem citar severidade `P<n>` e sem
+    terminar em `P` isolado, que a quebra de linha suave juntaria ao dígito da linha seguinte."""
+    value = unicodedata.normalize("NFKC", value)
+    return (markup_free(value) and "|" not in value and re.search(r"(?i)\bP\s*\d+\b", value) is None
+            and re.search(r"(?i)\bP\s*$", value) is None)
+
+
+def verdict_structure_problems(text: str) -> list[str]:
+    """Adendo de 30/09/2026 à T006: o Verdict só aceita a estrutura do modelo (fail-closed).
+
+    Aceita linhas em branco, título `#` inicial, linhas idênticas às do modelo (cabeçalhos `##`,
+    prosa e tabela de condições), campos do modelo com valor em texto simples e uma única tabela
+    canônica de achados. Qualquer outra linha é conteúdo fora do contrato.
+    """
+    model = (ROOT / REVIEW_VERDICT).read_text(encoding="utf-8").splitlines()
+    verbatim = {line for line in model if line.strip() and not FIELD.fullmatch(line)
+                and line != VERDICT_TABLE_HEADER and "<preencher>" not in line}
+    fields = set(template_fields(REVIEW_VERDICT))
+    problems, table, started = [], "ausente", False
+    for line in (raw.rstrip() for raw in text.splitlines()):
+        if table in {"cabeçalho", "linhas"} and not line.startswith("|"):
+            table = "encerrada"
+        field = re.fullmatch(r"- \*\*(.+?)\*\*: (.*)", line)
+        if line == VERDICT_TABLE_HEADER and table == "ausente":
+            allowed, table = True, "cabeçalho"
+        elif table == "cabeçalho":
+            allowed, table = TABLE_SEPARATOR.fullmatch(line) is not None, "linhas"
+        elif table == "linhas":
+            allowed = line.endswith("|") and markup_free(line.replace("\\|", ""))
+        elif not line or line in verbatim:
+            allowed = True
+        elif line.startswith("# ") and not started:
+            allowed = plain_text(line[2:])
+        elif field and field.group(1) in fields:
+            allowed = plain_text(field.group(2))
+        else:
+            allowed = not BLOCK_START.match(line) and not line.startswith("#") and plain_text(line)
+        started = started or bool(line)
+        if not allowed:
+            problems.append(f"linha fora do contrato do Verdict: {line}")
+    return problems
+
+
 def validate_round_artifact(
     template: Path, text: str, *, observed_head: str, observed_branch: str, request: str,
 ) -> list[str]:
@@ -106,6 +162,7 @@ def validate_round_artifact(
             problems.append(f"veredito fora do vocabulário: {values['Veredito']}")
         if values.get("Session ID") == requested.get("Session ID") or values.get("Revisor") == requested.get("Implementador"):
             problems.append("revisor e implementador na mesma sessão")
+        problems.extend(verdict_structure_problems(text))
     return problems
 
 
@@ -337,6 +394,24 @@ class GovernanceRoundsTest(unittest.TestCase):
                     observed_branch=observed["Branch"], request=request,
                 ))
 
+    def test_verdict_structural_contract_addendum(self) -> None:
+        """Adendo de 30/09/2026: o Verdict aceita só a estrutura do modelo, sem interpretar o Markdown."""
+        template = (ROOT / REVIEW_VERDICT).read_text(encoding="utf-8")
+        section = normative_section(template, "Contrato estrutural")
+        self.assertRegex(section, r"Adendo de 30/09/2026")
+        self.assertRegex(section, r"(?s)única fonte de P0, P1, P2 e P3")
+        self.assertRegex(section, r"(?s)Qualquer outra linha bloqueia")
+        for name in ("verdict-valid.md", "verdict-same-session.md", "verdict-invalid-value.md"):
+            with self.subTest(fixture=name):
+                self.assertEqual([], verdict_structure_problems(self.round_fixture(name)))
+        valid = self.round_fixture("verdict-valid.md")
+        request = self.round_fixture("request-valid.md")
+        for change in ("\n[P]1 contrato aberto\n", "\n## Seção fora do modelo\n", "\n- **Notas**: nenhuma\n"):
+            with self.subTest(change=change):
+                problems = validate_round_artifact(REVIEW_VERDICT, valid + change, observed_head="a" * 40,
+                                                   observed_branch="fixture/rodada", request=request)
+                self.assertEqual([f"linha fora do contrato do Verdict: {change.strip()}"], problems)
+
     def test_duplicated_field_is_rejected_instead_of_last_value_winning(self) -> None:
         unlock = ROOT / "deco/fixtures/review-handoff/write-unlock"
         observed = dict(FIELD.findall((unlock / "alto-plano-aprovado/base-observada.md").read_text(encoding="utf-8")))
@@ -347,7 +422,8 @@ class GovernanceRoundsTest(unittest.TestCase):
         branches = request.replace("- **Branch**: fixture/rodada", "- **Branch**: outra/branch\n- **Branch**: fixture/rodada")
         cases = {
             "veredito contraditório": (REVIEW_VERDICT, corrections, ["campo duplicado: Veredito"]),
-            "veredito duplicado com recuo": (REVIEW_VERDICT, indented, ["campo duplicado: Veredito"]),
+            "veredito duplicado com recuo": (REVIEW_VERDICT, indented, [
+                "campo duplicado: Veredito", "linha fora do contrato do Verdict:   - **Veredito**: REPROVADO"]),
             "branch contraditória": (REVIEW_REQUEST, branches, ["campo duplicado: Branch"]),
         }
         for name, (template, text, expected) in cases.items():

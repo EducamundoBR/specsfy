@@ -58,3 +58,21 @@ teste, diff e evidência fecha gate.
 Exemplo válido: achado com severidade, fonte, impacto e correção, mais proveniência
 do revisor. Exemplo inválido: “aprovado” sem teste, diff, evidência ou identidade
 distinta; gate permanece pendente.
+
+## Contrato estrutural
+
+Adendo de 30/09/2026, por decisão humana: o Verdict é conferido pela estrutura,
+sem interpretar a apresentação do Markdown.
+
+- A tabela de achados deste modelo é a única fonte de P0, P1, P2 e P3: no máximo
+  uma, com o cabeçalho exato, o separador e uma linha por achado.
+- Fora dela, o Verdict contém somente título `#`, os cabeçalhos `##` deste modelo,
+  os campos deste modelo (uma vez cada), linhas idênticas às deste modelo e texto
+  simples.
+- Texto simples, valores de campo e células não usam `[`, `]`, `<`, `>`, crase,
+  `*`, `~`, `$`, barra invertida, entidade HTML nem `_` fora de palavra; nas
+  células, a única barra invertida aceita é a de `\|`.
+- Texto simples e valores de campo não citam severidade `P<n>`, não terminam em
+  `P` isolado e não começam com recuo, citação, marcador de lista ou sublinhado
+  de título.
+- Qualquer outra linha bloqueia a aprovação e a liberação da escrita.

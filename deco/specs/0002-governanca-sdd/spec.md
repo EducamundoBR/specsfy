@@ -1659,6 +1659,46 @@ aceito não foi contornado para satisfazer esse defeito do validador.
   decisão exige nova decisão humana.
   Mecanismo: `deco/skills/review-handoff/SKILL.md` (T011), com fixtures em
   `deco/fixtures/review-handoff/`. `Delivery Gate` continua `Pending`.
+- **Adendo de 30/09/2026 — contrato estrutural do Review Verdict (T006; decisão
+  humana de Deco)**: altera o contrato de T006 do Review Verdict sem reescrever os
+  atos anteriores nem as rodadas encerradas.
+  1. **Problema**: da reconferência 13 à 20 da T011, a revisão independente (Sol 6
+     high) encontrou P0/P1 ocultos pela apresentação do Markdown: entidades HTML,
+     links, referências, código, tags e definições em contêineres. Cada correção
+     fechava uma variante e abria outra. Reproduzir a apresentação por expressões
+     regulares não convergia, e o revisor recomendou restringir a sintaxe do
+     Verdict.
+  2. **Sintaxe permitida**: a tabela de achados do modelo é a única fonte de P0,
+     P1, P2 e P3 (no máximo uma, com cabeçalho exato, separador e uma linha por
+     achado). Fora dela, o Verdict aceita somente linhas em branco, título `#`
+     inicial, os cabeçalhos `##` do modelo, linhas idênticas às do modelo, os
+     campos do modelo uma vez cada e texto simples. Nas células, `\|` é o único
+     escape aceito.
+  3. **Sintaxe rejeitada**: em texto, valores de campo e células, `[`, `]`, `<`,
+     `>`, crase, `*`, `~`, `$`, barra invertida, entidade HTML, `_` fora de
+     palavra e caractere invisível de formatação. Em texto e valores de campo,
+     também a citação de severidade `P<n>`, o `P` isolado no fim da linha (que a
+     quebra suave juntaria ao dígito seguinte) e as linhas iniciadas por recuo,
+     citação, marcador de lista, lista numerada ou sublinhado de título. Também
+     são rejeitados cabeçalho fora do modelo, campo fora do modelo, segundo título
+     e qualquer tabela além da canônica. Toda linha rejeitada bloqueia a aprovação
+     e a liberação da escrita (fail-closed); a apresentação do Markdown não é
+     interpretada.
+  4. **Impacto e compatibilidade**: as fixtures de T006, das skills de gate e de
+     T011 já cumprem o contrato. A fixture do ciclo 8
+     (`alto-aprovado-com-p1-apos-cabecalho`) e a do ciclo 7
+     (`alto-aprovado-com-p1-indentado`) passam a bloquear como Verdict fora do
+     contrato de T006. Tabelas e seções alheias ao modelo, antes toleradas, passam
+     a bloquear. Rodadas encerradas, como `reviews/plan-gate-2026-09-21/`, são
+     imutáveis e não são revalidadas. Mecanismo: `verdict_structure_problems()`
+     em `tests/test_deco_governance_rounds.py` (T006), aplicado pelo validador de
+     rodada, pela liberação da escrita e pela validação de `CURRENT`.
+  5. **Caminhos descartados**: (B) renderizador CommonMark real. O único
+     disponível é `marked`, instalado em `cli/node_modules`, e usá-lo criaria
+     dependência da camada `deco/` em relação a `cli/`, contra o caráter aditivo
+     do módulo no `AGENTS.md`. (C) seguir corrigindo a interpretação por
+     expressões regulares: oito reconferências seguidas sem convergência e custo
+     de revisão que chegou a esgotar o limite de uso do revisor.
 
 #### Gate do Ato III — Entrega
 

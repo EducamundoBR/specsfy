@@ -70,7 +70,7 @@ deco/
 │   ├── HANDOFF.md                     ponteiro para o snapshot ativo
 │   ├── session-handoff.md             base do snapshot datado
 │   ├── review-request.md              contratos da rodada de revisão (SPEC-0002/T006)
-│   ├── review-verdict.md              modelo do revisor
+│   ├── review-verdict.md              modelo do revisor e contrato estrutural (adendo 30/09)
 │   └── correction-report.md           modelo do implementador na reconferência
 ├── fixtures/handoff/                  cenários documentais para o verifier da v0.2
 ├── fixtures/review-round/             artefatos de rodada válidos e inválidos (T006)

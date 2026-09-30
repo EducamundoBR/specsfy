@@ -12,7 +12,7 @@ fixtures de Review Verdict conferidas contra o modelo de T006. T011
 
 from __future__ import annotations
 
-import html
+import functools
 import importlib.util
 import re
 import shutil
@@ -84,7 +84,7 @@ def verdict_fields(text: str) -> dict[str, str]:
 
 
 def verdict_problems(text: str) -> list[str]:
-    """Confere um Review Verdict de fixture contra os campos do modelo de T006."""
+    """Confere um Review Verdict de fixture contra o modelo de T006 e seu contrato estrutural."""
     template = (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8")
     required = [name for name, value in FIELD.findall(template) if value == "<preencher>"]
     values = verdict_fields(text)
@@ -103,7 +103,7 @@ def verdict_problems(text: str) -> list[str]:
             problems.append("achado com célula ausente: " + " | ".join(row))
         elif row[1] not in {"P0", "P1", "P2", "P3"}:
             problems.append("severidade fora de P0–P3: " + row[1])
-    problems.extend("linha de achado não interpretável: " + line for line in unparsed_finding_lines(text))
+    problems.extend(t006_rounds_module().verdict_structure_problems(text))
     return problems
 
 
@@ -111,87 +111,6 @@ def normalized(line: str) -> str:
     """NFKC, sem caracteres invisíveis de formatação e com espaços colapsados."""
     line = "".join(char for char in unicodedata.normalize("NFKC", line) if unicodedata.category(char) != "Cf")
     return " ".join(line.split())
-
-
-LINK = re.compile(r"""!?\[([^\]]*)\]\(\s*(?:<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)"""
-                  r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)""")
-REFERENCE = re.compile(r"!?\[([^\[\]]*)\](?:\[([^\[\]]*)\])?(?!\()")
-
-
-LIST_ITEM = re.compile(r"( {0,3}(?:[-+*]|\d{1,9}[.)]))( +|$)")
-FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
-REFERENCE_DEFINITION = re.compile(r" {0,3}\[([^\[\]]+)\]:\s*\S")  # definição simples, de uma linha e fora de contêiner
-DEFINITION_LIKE = re.compile(r"\[([^\[\]]+)\]:")
-
-
-def code_lines(text: str) -> set[int]:
-    """Índices das linhas de bloco de código cercado ou recuado, que o Markdown exibe literalmente.
-
-    O recuo do código é medido a partir do conteúdo do item de lista aberto.
-    """
-    code, fence, base, indented, blank = set(), "", 0, False, True
-    for index, line in enumerate(line.expandtabs(4) for line in text.splitlines()):
-        indent = len(line) - len(line.lstrip(" "))
-        if fence:
-            code.add(index)
-            if re.fullmatch(rf" {{0,3}}{re.escape(fence[0])}{{{len(fence)},}}\s*", line):
-                fence = ""
-        elif match := FENCE.match(line):
-            fence = match.group(1)
-            code.add(index)
-        elif not line.strip():
-            blank = True
-        elif indent >= base + 4 and (indented or blank):
-            indented, blank = True, False
-            code.add(index)
-        else:  # na dúvida, é lista (não código): a lista só termina em linha sem recuo após linha em branco
-            if item := LIST_ITEM.match(line):
-                spaces = len(item.group(2))
-                base = len(item.group(1)) + (spaces if 1 <= spaces <= 4 else 1)
-            elif blank and indent == 0:
-                base = 0
-            indented = blank = False
-    return code
-
-
-def reference_labels(text: str) -> frozenset[str]:
-    """Rótulos que podem estar definidos (`[rótulo]:` em qualquer ponto fora de código); fail-closed, eles
-    transformam colchetes em link."""
-    code = code_lines(text)
-    return frozenset(normalized(label).lower() for index, line in enumerate(text.splitlines())
-                     if index not in code for label in DEFINITION_LIKE.findall(line))
-
-
-ATTRIBUTE = r"""\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?"""
-TAG = re.compile(  # HTML inline do CommonMark: comentário, CDATA, instrução, declaração, abertura e fechamento
-    rf"""<!--.*?-->|<!\[CDATA\[.*?\]\]>|<\?.*?\?>|<![A-Za-z][^>]*>"""
-    rf"""|<[A-Za-z][A-Za-z0-9-]*(?:{ATTRIBUTE})*\s*/?>|</[A-Za-z][A-Za-z0-9-]*\s*>""")
-PARTIAL_TAG = re.compile(  # construção HTML que pode continuar na linha seguinte
-    rf"""<!--(?!.*-->)|<!\[CDATA\[(?!.*\]\]>)|<\?(?!.*\?>)"""
-    rf"""|</?[A-Za-z][A-Za-z0-9-]*(?:{ATTRIBUTE})*(?:\s+[A-Za-z_:][\w.:-]*\s*=\s*(?:'[^']*|"[^"]*)?)?\s*$""")
-
-
-def without_markup(line: str, labels: frozenset[str] = frozenset()) -> str:
-    """Links, imagens e referências definidas (completa, recolhida ou abreviada) reduzidos ao texto
-    visível; colchetes sem definição ficam literais; definições de referência, comentários e tags omitidos."""
-    def resolve(match: re.Match[str]) -> str:
-        label = match.group(2) or match.group(1)
-        return match.group(1) if normalized(label).lower() in labels else match.group(0)
-
-    line = LINK.sub(r"\1", re.sub(r"^\s*\[[^\]]+\]:\s*\S.*$", "", line))
-    return TAG.sub("", REFERENCE.sub(resolve, line))
-
-
-def ambiguous_markup(line: str, labels: frozenset[str] = frozenset()) -> bool:
-    """Fail-closed: link não resolvido ou HTML que pode continuar na linha seguinte deixa a apresentação
-    indeterminada. `<` que não forma tag é texto literal (como `a<b`)."""
-    rest = without_markup(line, labels)
-    return "](" in rest or PARTIAL_TAG.search(rest) is not None
-
-
-def rendered(line: str, labels: frozenset[str] = frozenset()) -> str:
-    """Texto como o Markdown o exibe: sem marcação, marcas inline e escapes; entidades decodificadas."""
-    return normalized(re.sub(r"[*_`~\\]", "", html.unescape(without_markup(line, labels))))
 
 
 def table_lines(text: str) -> tuple[list[str], int | None]:
@@ -209,7 +128,6 @@ def table_end(lines: list[str], start: int) -> int:
 
 
 SEPARATOR = r"\|(?: ?:?-+:? ?\|)+"
-FINDINGS_HEADING = re.compile(r"(?i)^#{1,6}\s.*achad")
 
 
 def cells(line: str) -> list[str]:
@@ -218,79 +136,11 @@ def cells(line: str) -> list[str]:
 
 
 def finding_rows(text: str) -> list[list[str]]:
-    """Linhas da tabela de achados do modelo e de toda seção posterior de achados."""
+    """Linhas da tabela canônica de achados, a única fonte de severidade (adendo de 30/09/2026 à T006)."""
     lines, start = table_lines(text)
     if start is None:
         return []
-    return [cells(line) for line in lines[start + 1:table_end(lines, start)]
-            if not re.fullmatch(SEPARATOR, line)] + other_finding_lines(text)[0]
-
-
-def unparsed_finding_lines(text: str) -> list[str]:
-    """Fail-closed: linha com aparência de achado que não pode ser lida como achado bloqueia."""
-    return other_finding_lines(text)[1]
-
-
-def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
-    """Fora da tabela do modelo, nenhum cabeçalho encerra a busca por achados.
-
-    Em seção cujo título fala de achados, cada linha de tabela é achado e qualquer outra linha
-    com `|` é não interpretável. Fora dela, tabelas de outras finalidades (como a de condições do
-    parecer) são ignoradas quando são tabela válida (cabeçalho seguido de separador, todas as linhas
-    com a largura do cabeçalho) cujo cabeçalho não é de achados (`ID` ou `Severidade`). Linha solta
-    sem separador, linha de outra largura, tabela com cabeçalho de achados e célula iniciada por
-    severidade `P<n>` são não interpretáveis. Na seção da tabela, depois dela,
-    vale a regra anterior.
-    Achado só existe em tabela: severidade `P<n>` citada em texto, lista ou valor de campo, fora de
-    linha idêntica ao modelo de T006, também é não interpretável.
-    """
-    lines, start = table_lines(text)
-    if start is None:
-        return [], []
-    template = {normalized(line) for line in (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8").splitlines()}
-    labels, code, raw = reference_labels(text), code_lines(text), text.splitlines()
-
-    def cites_severity(line: str) -> bool:
-        field = re.fullmatch(r"- \*\*.+?\*\*: (.*)", line)
-        return line not in template and re.search(r"(?i)\bP\s*\d+\b", rendered(field.group(1) if field else line, labels)) is not None
-
-    end = table_end(lines, start)
-    rows, unparsed, in_findings, same_section, foreign_table, width = [], [], False, False, False, 0
-    for index, line in enumerate(lines):
-        if start <= index < end:
-            continue
-        same_section = same_section or index == end
-        if index in code:  # código é exibido literalmente: a severidade escrita nele é visível
-            if re.search(r"(?i)\bP\s*\d+\b", line):
-                unparsed.append(line)
-            continue
-        heading = re.match(r"#{1,6}(?:\s|$)", line) is not None
-        if heading:
-            in_findings, same_section = FINDINGS_HEADING.match(line) is not None, False
-        if line not in template and (ambiguous_markup(line, labels) or (
-                DEFINITION_LIKE.search(raw[index]) and not REFERENCE_DEFINITION.match(raw[index].expandtabs(4)))):
-            unparsed.append(line)
-            continue
-        if index and re.search(r"(?i)\bP$", rendered(lines[index - 1], labels)) and re.match(r"\d", rendered(line, labels)):
-            unparsed.append(line)
-            continue
-        if "|" not in line:
-            if cites_severity(line):
-                unparsed.append(line)
-            continue
-        in_table = line.startswith("|")
-        if in_table and (index == 0 or not lines[index - 1].startswith("|")):
-            header, width = [cell.lower() for cell in cells(line)], len(cells(line))
-            foreign_table = (index + 1 < len(lines) and re.fullmatch(SEPARATOR, lines[index + 1]) is not None
-                             and header[0] != "id" and not any("severidade" in cell for cell in header))
-        shaped = ((in_table and (not foreign_table or len(cells(line)) != width)) or any(re.match(r"(?i)P\s*\d", rendered(cell, labels)) for cell in cells(line))
-                  or cites_severity(line))
-        if in_findings and not same_section and not heading and line.startswith("|"):
-            if not line.startswith("| ID ") and not re.fullmatch(SEPARATOR, line):
-                rows.append(cells(line))
-        elif same_section or in_findings or shaped:
-            unparsed.append(line)
-    return rows, unparsed
+    return [cells(line) for line in lines[start + 1:table_end(lines, start)] if not re.fullmatch(SEPARATOR, line)]
 
 
 def findings(text: str) -> list[tuple[str, str]]:
@@ -478,12 +328,14 @@ ARTIFACTS_BY_STATE = {
 
 
 def t006_fields_filled(name: str, text: str) -> bool:
-    """Artefato completo: todo campo do modelo de T006 presente, único e preenchido (`NÃO REGISTRADO` persiste)."""
+    """Artefato completo: todo campo do modelo de T006 presente, único e preenchido (`NÃO REGISTRADO` persiste);
+    o Verdict também segue o contrato estrutural do adendo de 30/09/2026."""
     rounds = t006_rounds_module()
     template = {"review-request.md": rounds.REVIEW_REQUEST, "review-verdict.md": rounds.REVIEW_VERDICT,
                 "correction-report.md": rounds.CORRECTION_REPORT}[name]
     values = {field: " ".join(value.split()) for field, value in verdict_fields(text).items()}
-    return all(values.get(field) not in {None, "", "<preencher>"} for field in rounds.template_fields(template))
+    return (all(values.get(field) not in {None, "", "<preencher>"} for field in rounds.template_fields(template))
+            and (name != "review-verdict.md" or not rounds.verdict_structure_problems(text)))
 
 
 def current_problems(reviews: Path, gate: str) -> list[str]:
@@ -548,6 +400,7 @@ def next_round_name(reviews: Path, gate: str, date: str) -> str:
 WRITE_UNLOCK = HANDOFF_FIXTURES / "write-unlock"
 
 
+@functools.cache
 def t006_rounds_module():
     """Carrega o validador de T006 do próprio módulo de testes, sem duplicar a regra."""
     spec = importlib.util.spec_from_file_location(
@@ -741,6 +594,8 @@ class ReviewHandoffTest(unittest.TestCase):
                                          lambda text: text.replace("- **HEAD**: ", "- **HEAD**: " + "d" * 40 + "\n- **HEAD**: ", 1)),
             "veredito duplicado com recuo": ("plan-2026-01-10/review-verdict.md",
                                              lambda text: text + "  - **Veredito**: REPROVADO\n"),
+            "parecer fora do contrato estrutural": ("plan-2026-01-10/review-verdict.md",
+                                                    lambda text: text + "\n[P]1 contrato aberto\n"),
         }
         for name, (artifact, change) in cases.items():
             with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
@@ -817,53 +672,105 @@ class ReviewHandoffTest(unittest.TestCase):
     def test_indented_blocking_finding_keeps_write_locked(self) -> None:
         case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1-indentado"
         self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p1-indentado")
-        self.assertEqual(["Verdict APROVADO com achado P0 ou P1"], write_unlock_problems(case))
+        self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
         approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
         self.assertEqual([("P-1", "P3")], [(row[0], row[1]) for row in finding_rows(approved)])
         unreadable = approved + "P-2 | P1 | spec §14 T004 | escrita indevida\n"
-        self.assertIn("linha de achado não interpretável: P-2 | P1 | spec §14 T004 | escrita indevida",
+        self.assertIn("linha fora do contrato do Verdict: P-2 | P1 | spec §14 T004 | escrita indevida",
                       verdict_problems(unreadable))
+
+    def test_blocking_finding_after_new_heading_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1-apos-cabecalho"
+        self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p1-apos-cabecalho")
+        self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        hidden = (case / "plano/review-verdict.md").read_text(encoding="utf-8")
+        self.assertIn("linha fora do contrato do Verdict: ## Achados complementares", verdict_problems(hidden))
+        self.assertEqual([("P-1", "P3")], [(row[0], row[1]) for row in finding_rows(hidden)])
+        for name, expected in (("alto-aprovado-com-p1-indentado", "artefatos do plano fora do contrato de T006"),
+                               ("alto-verdict-sessao-espacada", "artefatos do plano fora do contrato de T006"),
+                               ("critico-gate-pessoa-espacada", "gate humano sem pessoa registrada")):
+            with self.subTest(ciclo7=name):
+                self.assertEqual([expected], write_unlock_problems(ROOT / WRITE_UNLOCK / name))
+
+    def test_blocking_finding_declared_outside_table_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1-em-texto"
+        self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p1-em-texto")
+        self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        declared = approved.replace("ver tabela, em ordem de severidade", "P1 em T004; demais na tabela")
+        self.assertIn("linha fora do contrato do Verdict: - **Achados P0-P3**: P1 em T004; demais na tabela",
+                      verdict_problems(declared))
+
+    def test_verdict_accepts_only_the_model_structure(self) -> None:
+        """Adendo de 30/09/2026 à T006: estrutura do modelo ou bloqueio, sem interpretar a apresentação."""
+        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        template = (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8")
+        severities = {
+            "P1 em texto": "P1 escondido", "espaço": "P 1", "tabulação": "P\t1", "espaço não separável": "P 1",
+            "largura zero": "P​1", "largura total": "Ｐ１", "entidade decimal": "&#80;1",
+            "entidade hexadecimal": "&#x50;1", "negrito": "**P**1", "comentário HTML": "P<!-- x -->1",
+            "tag HTML": "P<span>1</span>", "atributo com >": 'P<span title=">">1</span>', "código inline": "`P1`",
+            "escape de barra": "P\\1", "link": "[P](#)1", "imagem": "![P](x.png)1", "link com parênteses":
+            "[P](docs/item(v2).md)1", "referência abreviada": "[P]1", "referência recolhida": "[P][]1",
+            "matemática": "$P_1$", "ênfase com sublinhado": "_P_1",
+        }
+        blocked = {f"{name} em texto": f"\nNota do revisor: {value} contrato aberto.\n" for name, value in severities.items()}
+        blocked |= {f"{name} em campo": approved.replace("- **Condições**: nenhuma", f"- **Condições**: {value}")
+                    for name, value in severities.items()}
+        blocked |= {
+            "cabeçalho fora do modelo": "\n## Achados complementares\n",
+            "segundo título": "\n# Outro título\n",
+            "campo fora do modelo": "\n- **Notas**: nenhuma\n",
+            "linha recuada": "\n    texto recuado\n",
+            "citação": "\n> texto citado\n",
+            "lista": "\n- item solto\n",
+            "lista numerada": "\n1. item solto\n",
+            "sublinhado de título": "\nTexto\n---\n",
+            "bloco cercado": "\n```\ntexto\n```\n",
+            "bloco com til": "\n~~~\ntexto\n~~~\n",
+            "definição de referência": "\n[P]: #\n",
+            "definição em citação": "\n> [P]: #\n",
+            "segunda tabela de achados": "\n| ID | Severidade P0–P3 | Fonte e trecho verificável | Impacto | Correção proposta |\n"
+                                         "| --- | --- | --- | --- | --- |\n| P-2 | P1 | fonte | impacto | correção |\n",
+            "tabela alheia": "\n| Teste | Resultado |\n| --- | --- |\n| contrato | ok |\n",
+            "linha solta de tabela": "\n| P-2 | alta | fonte | impacto | correção |\n",
+            "marcação em célula": approved.replace("| leitura mais lenta do plano |", "| leitura [lenta](#) do plano |"),
+            "quebra suave após campo": approved.replace("- **Condições**: nenhuma", "- **Condições**: nenhuma P\n1 aberto"),
+            "quebra suave em texto": "\nNota do revisor com P\n1 aberto.\n",
+            "tag HTML em bloco": "\n<div>P1</div>\n",
+        }
+        for name, change in blocked.items():
+            text = change if change.startswith("#") else approved + change
+            with self.subTest(bloqueado=name), tempfile.TemporaryDirectory() as tmp:
+                self.assertTrue([problem for problem in verdict_problems(text)
+                                 if problem.startswith("linha fora do contrato do Verdict")], "conteúdo fora do modelo passou")
+                case = Path(tmp) / "caso"
+                shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+                (case / "plano/review-verdict.md").write_text(text, encoding="utf-8")
+                self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        accepted = {
+            "prosa do modelo": "\n" + template[template.index("Usar `Nenhum`"):template.index("## Parecer")],
+            "seção do parecer e tabela de condições": "\n" + template[template.index("## Parecer"):template.index("- **Veredito**")]
+                                                      + template[template.index("Valores permitidos"):],
+            "texto simples": "\nObservação do revisor: leitura integral feita em sessao_revisor_002, sem ressalvas.\n",
+            "pipe escapado na célula": "",
+        }
+        escaped = approved.replace("| renomear sem mudar escopo |", "| renomear A \\| B sem mudar escopo |")
+        for name, tail in accepted.items():
+            text = escaped if name == "pipe escapado na célula" else approved + tail
+            with self.subTest(aceito=name), tempfile.TemporaryDirectory() as tmp:
+                self.assertEqual([], verdict_problems(text))
+                case = Path(tmp) / "caso"
+                shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+                (case / "plano/review-verdict.md").write_text(text, encoding="utf-8")
+                self.assertEqual([], write_unlock_problems(case))
+        self.assertEqual(["P3"], [severity for severity, _ in findings(escaped)])
 
     def test_critical_gate_with_spaced_unregistered_person_keeps_write_locked(self) -> None:
         case = ROOT / WRITE_UNLOCK / "critico-gate-pessoa-espacada"
         self.assertTrue(case.is_dir(), "fixture ausente: critico-gate-pessoa-espacada")
         self.assertEqual(["gate humano sem pessoa registrada"], write_unlock_problems(case))
         self.assertEqual([], write_unlock_problems(ROOT / WRITE_UNLOCK / "critico-completo"))
-
-    def test_blocking_finding_after_new_heading_keeps_write_locked(self) -> None:
-        case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1-apos-cabecalho"
-        self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p1-apos-cabecalho")
-        self.assertEqual(["Verdict APROVADO com achado P0 ou P1"], write_unlock_problems(case))
-        hidden = (case / "plano/review-verdict.md").read_text(encoding="utf-8")
-        self.assertEqual([("P-1", "P3"), ("P-2", "P1")], [(row[0], row[1]) for row in finding_rows(hidden)])
-        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
-        blocked = {
-            "achado malformado em seção de achados": "\n## Achados complementares\n\nP-2 | P1 | fonte | impacto\n",
-            "achado em seção sem título de achados": "\n## Notas do revisor\n\n| P-2 | P1 | fonte | impacto | correção |\n",
-        }
-        for name, tail in blocked.items():
-            with self.subTest(case=name):
-                self.assertTrue([problem for problem in verdict_problems(approved + tail)
-                                 if problem.startswith("linha de achado não interpretável")])
-        template = (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8")
-        accepted = {
-            "P3 depois de novo cabeçalho": ("\n## Achados complementares\n\n| P-2 | P3 | fonte | impacto | correção |\n",
-                                            ["P3", "P3"]),
-            "P2 depois de novo cabeçalho": ("\n## Achados complementares\n\n| ID | Severidade P0–P3 | Fonte | Impacto | Correção |\n"
-                                            "| --- | --- | --- | --- | --- |\n| P-2 | P2 | fonte | impacto | correção |\n",
-                                            ["P3", "P2"]),
-            "texto e tabela do parecer": ("\n## Parecer e encaminhamento\n\n" + template[template.index("Valores permitidos"):],
-                                          ["P3"]),
-        }
-        for name, (tail, severities) in accepted.items():
-            with self.subTest(case=name):
-                self.assertEqual([], verdict_problems(approved + tail))
-                self.assertEqual(severities, [severity for severity, _ in findings(approved + tail)])
-        for name, expected in (("alto-aprovado-com-p1-indentado", "Verdict APROVADO com achado P0 ou P1"),
-                               ("alto-verdict-sessao-espacada", "artefatos do plano fora do contrato de T006"),
-                               ("critico-gate-pessoa-espacada", "gate humano sem pessoa registrada")):
-            with self.subTest(ciclo7=name):
-                self.assertEqual([expected], write_unlock_problems(ROOT / WRITE_UNLOCK / name))
 
     def test_critical_gate_without_valid_date_keeps_write_locked(self) -> None:
         case = ROOT / WRITE_UNLOCK / "critico-gate-data-nao-registrada"
@@ -984,25 +891,6 @@ class ReviewHandoffTest(unittest.TestCase):
                 (case / "gate-humano.md").write_text(gate.replace("2026-01-10", value), encoding="utf-8")
                 self.assertEqual(expected, write_unlock_problems(case))
 
-    def test_blocking_finding_declared_outside_table_keeps_write_locked(self) -> None:
-        case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1-em-texto"
-        self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p1-em-texto")
-        self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
-        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
-        blocked = {
-            "campo Achados P0-P3": approved.replace("ver tabela, em ordem de severidade", "P1 em T004; demais na tabela"),
-            "texto após novo cabeçalho": approved + "\n## Achados complementares\n\nP-2 P1 tarefa sem critério\n",
-            "lista em outra seção": approved + "\n## Notas do revisor\n\n- P1: tarefa T004 sem critério\n",
-            "tabulação": approved + "\n\tp0 — escrita sem plano\n",
-        }
-        for name, text in blocked.items():
-            with self.subTest(case=name):
-                self.assertTrue([problem for problem in verdict_problems(text)
-                                 if problem.startswith("linha de achado não interpretável")])
-        template = (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8")
-        prose = template[template.index("Usar `Nenhum`"):template.index("## Parecer")]
-        self.assertEqual([], verdict_problems(approved + "\n" + prose))
-
     def test_duplicated_fields_keep_write_locked(self) -> None:
         source = ROOT / WRITE_UNLOCK / "critico-completo"
         cases = {
@@ -1023,119 +911,6 @@ class ReviewHandoffTest(unittest.TestCase):
                 self.assertIn(old, text)
                 (case / artifact).write_text(text.replace(old, new), encoding="utf-8")
                 self.assertTrue(write_unlock_problems(case), "campo duplicado liberou a escrita")
-
-    def test_foreign_tables_are_told_apart_from_findings_by_header(self) -> None:
-        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
-        tests_table = ("\n## Testes\n\n| Comando | Resultado | Duração | Ambiente | Observação |\n"
-                       "| --- | --- | --- | --- | --- |\n| python3 -B -m unittest | 67 OK | 0,4 s | local | sem rede |\n"
-                       "| make verify-version | 0.22.2 | 1 s | local | sem rede |\n")
-        self.assertEqual([], verdict_problems(approved + tests_table))
-        self.assertEqual(["P3"], [severity for severity, _ in findings(approved + tests_table)])
-        escaped = "\n## Regras\n\n| Regra | Resultado |\n| --- | --- |\n| A \\| B | ok |\n"
-        self.assertEqual([], verdict_problems(approved + escaped))
-        extra = "\n## Achados complementares\n\n| P-2 | P3 | spec §3: A \\| B | leitura | reescrever |\n"
-        self.assertEqual([], verdict_problems(approved + extra))
-        self.assertEqual([("P-2", "P3", "spec §3: A \\| B")],
-                         [(row[0], row[1], row[2]) for row in finding_rows(approved + extra)][1:])
-        blocked = {
-            "tabela com cabeçalho de achados": "\n## Evidências\n\n| ID | Severidade P0–P3 | Fonte | Impacto | Correção |\n"
-                                               "| --- | --- | --- | --- | --- |\n| E-1 | alta | fonte | impacto | correção |\n",
-            "coluna de severidade": "\n## Evidências\n\n| Item | Severidade |\n| --- | --- |\n| E-1 | alta |\n",
-            "linha solta sem separador": "\n## Notas do revisor\n\n| E-2 | alta | fonte | impacto | correção |\n",
-            "severidade em tabela alheia": tests_table + "| teste extra | P1 aberto | 1 s | local | sem rede |\n",
-            "linha mais larga que o cabeçalho": "\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n"
-                                                "| E-1 | alta | fonte | impacto | correção |\n",
-            "linha mais estreita que o cabeçalho": "\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| E-1 |\n",
-            "separador de outra largura": "\n## Testes\n\n| Teste | Resultado |\n| --- | --- | --- |\n| contrato | ok |\n",
-        }
-        for name, tail in blocked.items():
-            with self.subTest(case=name):
-                self.assertTrue([problem for problem in verdict_problems(approved + tail)
-                                 if problem.startswith("linha de achado não interpretável")])
-
-    def test_severity_hidden_by_markup_keeps_write_locked(self) -> None:
-        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
-        for name, severity in {"entidade decimal": "&#80;1", "entidade hexadecimal": "&#x50;1",
-                               "entidades nos dois caracteres": "&#80;&#49;", "negrito": "**P**1",
-                               "comentário HTML": "P<!-- x -->1", "tag HTML": "P<span>1</span>",
-                               "código inline": "`P1`", "escape de barra": "P\\1",
-                               "quebra de linha suave": "P\n1", "link": "[P](#)1", "imagem": "![P](x.png)1",
-                               "link por referência": "[P][r]1", "link com parênteses": "[P](docs/item(v2).md)1",
-                               "atributo com >": 'P<span title=">">1</span>', "atributo com > em aspas simples":
-                               "P<span title='>'>1</span>", "link de apresentação indeterminada": "[P](a(b(c)))1",
-                               "tag partida entre linhas": "P<span\ntitle='x'>1", "comentário aberto": "P<!--\n-->1",
-                               "referência abreviada": "[P]1", "referência recolhida": "[P][]1"}.items():
-            for tail in (f"\n## Achados complementares\n\n{severity}: contrato crítico aberto\n",
-                         f"\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| contrato | {severity} aberto |\n"):
-                with self.subTest(case=name, tail=tail), tempfile.TemporaryDirectory() as tmp:
-                    text = approved + tail + "\n[P]: #\n[r]: #\n"
-                    self.assertTrue([problem for problem in verdict_problems(text)
-                                     if problem.startswith("linha de achado não interpretável")])
-                    case = Path(tmp) / "caso"
-                    shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
-                    (case / "plano/review-verdict.md").write_text(text, encoding="utf-8")
-                    self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
-        undefined = "\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| contrato | P[1] |\n\nNota: [P]1 sem definição.\n"
-        self.assertEqual([], verdict_problems(approved + undefined))
-        links = ("\n## Notas do revisor\n\nVer [relatório](docs/P1-contrato.md), ![diagrama](img/P0.png) e [notas][P1].\n"
-                 "\n[P1]: docs/p1.md\n")
-        self.assertEqual([], verdict_problems(approved + links))
-        nested = ("\n## Testes\n\n| Teste | Evidência |\n| --- | --- |\n| contrato | [detalhes](docs/item(v2)-P1.md) |\n"
-                  "\nVer [detalhes](docs/item(v2)-P1.md \"título\") e <span title=\">P1\">nota</span>.\n")
-        self.assertEqual([], verdict_problems(approved + nested))
-        literal = ("\n## Regras\n\n| Condição | Resultado |\n| --- | --- |\n| a<b | ok |\n"
-                   "\nQuando a<b, siga; P<span 1 aparece como texto literal.\n")
-        self.assertEqual([], verdict_problems(approved + literal))
-
-    def test_code_blocks_are_literal_for_findings_and_references(self) -> None:
-        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
-        literal = {
-            "definição em bloco cercado": "\n## Notas do revisor\n\nValor P[1] literal.\n\n```\n[1]: #\n```\n",
-            "definição em bloco recuado": "\n## Notas do revisor\n\nValor P[1] literal.\n\n    [1]: #\n",
-        }
-        for name, tail in literal.items():
-            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
-                self.assertEqual([], verdict_problems(approved + tail))
-                case = Path(tmp) / "caso"
-                shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
-                (case / "plano/review-verdict.md").write_text(approved + tail, encoding="utf-8")
-                self.assertEqual([], write_unlock_problems(case))
-        visible = {
-            "P1 exibido em bloco cercado": "\n## Notas do revisor\n\n~~~\n[P1]: contrato aberto\n~~~\n",
-            "P1 exibido em bloco recuado": "\n## Notas do revisor\n\ntexto\n\n    <b>P1</b> contrato aberto\n",
-            "definição em item de lista": "\n## Notas do revisor\n\n- item\n\n    [P]: #\n\n[P]1 contrato aberto\n",
-            "definição após continuação do item": "\n## Notas do revisor\n\n- item\n  continuação\n\n    [P]: #\n\n[P]1 aberto\n",
-            "definição após continuação preguiçosa": "\n## Notas do revisor\n\n- item\ncontinuação\n\n    [P]: #\n\n[P]1 aberto\n",
-            "definição multilinha": "\n## Notas do revisor\n\n[P]1 contrato aberto\n\n[P]:\n<#>\n",
-            "definição em citação": "\n## Notas do revisor\n\n[P]1 contrato aberto\n\n> [P]: #\n",
-            "definição em lista": "\n## Notas do revisor\n\n[P]1 contrato aberto\n\n- [P]: #\n",
-        }
-        for name, tail in visible.items():
-            with self.subTest(liberacao=name), tempfile.TemporaryDirectory() as tmp:
-                case = Path(tmp) / "caso"
-                shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
-                (case / "plano/review-verdict.md").write_text(approved + tail, encoding="utf-8")
-                self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
-        list_code = "\n## Notas do revisor\n\nValor P[1] literal.\n\n- item\n\n      [1]: #\n"
-        self.assertEqual([], verdict_problems(approved + list_code))
-        for name, tail in visible.items():
-            with self.subTest(case=name):
-                self.assertTrue([problem for problem in verdict_problems(approved + tail)
-                                 if problem.startswith("linha de achado não interpretável")])
-
-    def test_spaced_or_disguised_severity_keeps_write_locked(self) -> None:
-        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
-        for name, severity in {"espaço": "P 1", "tabulação": "P\t1", "espaço não separável": "P\u00a01",
-                               "largura zero": "P\u200b1", "largura total": "\uff30\uff11"}.items():
-            for tail in (f"\n## Notas do revisor\n\n{severity} escondido depois do cabeçalho\n",
-                         f"\n## Notas do revisor\n\n| P-2 | {severity} | fonte | impacto |\n"):
-                with self.subTest(case=name, tail=tail), tempfile.TemporaryDirectory() as tmp:
-                    self.assertTrue([problem for problem in verdict_problems(approved + tail)
-                                     if problem.startswith("linha de achado não interpretável")])
-                    case = Path(tmp) / "caso"
-                    shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
-                    (case / "plano/review-verdict.md").write_text(approved + tail, encoding="utf-8")
-                    self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
 
     def test_plan_gate_addendum_is_recorded_without_rewriting_history(self) -> None:
         spec = (ROOT / "deco/specs/0002-governanca-sdd/spec.md").read_text(encoding="utf-8")
