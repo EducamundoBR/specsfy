@@ -99,6 +99,15 @@ def plain_text(value: str) -> bool:
             and re.search(r"(?i)\bP\s*$", value) is None)
 
 
+def finding_row_allowed(line: str) -> bool:
+    """Linha da tabela canônica: cinco células, severidade exatamente P0–P3 e as demais em texto simples,
+    sem citar severidade; `\\|` é o único escape aceito dentro da célula."""
+    row = [cell.strip() for cell in re.split(r"(?<!\\)\|", line.removeprefix("|").removesuffix("|"))]
+    return (line.endswith("|") and len(row) == VERDICT_TABLE_HEADER.count("|") - 1
+            and row[1] in {"P0", "P1", "P2", "P3"}
+            and all(plain_text(cell.replace("\\|", "")) for index, cell in enumerate(row) if index != 1))
+
+
 def verdict_structure_problems(text: str) -> list[str]:
     """Adendo de 30/09/2026 à T006: o Verdict só aceita a estrutura do modelo (fail-closed).
 
@@ -120,7 +129,7 @@ def verdict_structure_problems(text: str) -> list[str]:
         elif table == "cabeçalho":
             allowed, table = TABLE_SEPARATOR.fullmatch(line) is not None, "linhas"
         elif table == "linhas":
-            allowed = line.endswith("|") and markup_free(line.replace("\\|", ""))
+            allowed = finding_row_allowed(line)
         elif not line or line in verbatim:
             allowed = True
         elif line.startswith("# ") and not started:
