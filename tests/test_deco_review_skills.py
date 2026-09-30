@@ -113,8 +113,14 @@ def normalized(line: str) -> str:
     return " ".join(line.split())
 
 
-LINK = re.compile(r"""!?\[([^\]]*)\](?:\(\s*(?:<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)"""
-                  r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)|\[[^\]]*\])""")
+LINK = re.compile(r"""!?\[([^\]]*)\]\(\s*(?:<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)"""
+                  r"""(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)""")
+REFERENCE = re.compile(r"!?\[([^\[\]]*)\](?:\[([^\[\]]*)\])?(?!\()")
+
+
+def reference_labels(text: str) -> frozenset[str]:
+    """Rótulos com definição `[rótulo]: destino` no documento; só eles transformam colchetes em link."""
+    return frozenset(normalized(label).lower() for label in re.findall(r"(?m)^\s*\[([^\]]+)\]:\s*\S", text))
 ATTRIBUTE = r"""\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?"""
 TAG = re.compile(  # HTML inline do CommonMark: comentário, CDATA, instrução, declaração, abertura e fechamento
     rf"""<!--.*?-->|<!\[CDATA\[.*?\]\]>|<\?.*?\?>|<![A-Za-z][^>]*>"""
@@ -124,23 +130,27 @@ PARTIAL_TAG = re.compile(  # construção HTML que pode continuar na linha segui
     rf"""|</?[A-Za-z][A-Za-z0-9-]*(?:{ATTRIBUTE})*(?:\s+[A-Za-z_:][\w.:-]*\s*=\s*(?:'[^']*|"[^"]*)?)?\s*$""")
 
 
-def without_markup(line: str) -> str:
-    """Links, imagens e colchetes restantes (referência abreviada ou texto literal) reduzidos ao texto
-    visível; definições de referência, comentários e tags omitidos."""
+def without_markup(line: str, labels: frozenset[str] = frozenset()) -> str:
+    """Links, imagens e referências definidas (completa, recolhida ou abreviada) reduzidos ao texto
+    visível; colchetes sem definição ficam literais; definições de referência, comentários e tags omitidos."""
+    def resolve(match: re.Match[str]) -> str:
+        label = match.group(2) or match.group(1)
+        return match.group(1) if normalized(label).lower() in labels else match.group(0)
+
     line = LINK.sub(r"\1", re.sub(r"^\s*\[[^\]]+\]:\s*\S.*$", "", line))
-    return TAG.sub("", re.sub(r"\[([^\[\]]*)\](?!\()", r"\1", line))
+    return TAG.sub("", REFERENCE.sub(resolve, line))
 
 
-def ambiguous_markup(line: str) -> bool:
+def ambiguous_markup(line: str, labels: frozenset[str] = frozenset()) -> bool:
     """Fail-closed: link não resolvido ou HTML que pode continuar na linha seguinte deixa a apresentação
     indeterminada. `<` que não forma tag é texto literal (como `a<b`)."""
-    rest = without_markup(line)
+    rest = without_markup(line, labels)
     return "](" in rest or PARTIAL_TAG.search(rest) is not None
 
 
-def rendered(line: str) -> str:
+def rendered(line: str, labels: frozenset[str] = frozenset()) -> str:
     """Texto como o Markdown o exibe: sem marcação, marcas inline e escapes; entidades decodificadas."""
-    return normalized(re.sub(r"[*_`~\\]", "", html.unescape(without_markup(line))))
+    return normalized(re.sub(r"[*_`~\\]", "", html.unescape(without_markup(line, labels))))
 
 
 def table_lines(text: str) -> tuple[list[str], int | None]:
@@ -197,10 +207,11 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
     if start is None:
         return [], []
     template = {normalized(line) for line in (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8").splitlines()}
+    labels = reference_labels(text)
 
     def cites_severity(line: str) -> bool:
         field = re.fullmatch(r"- \*\*.+?\*\*: (.*)", line)
-        return line not in template and re.search(r"(?i)\bP\s*\d+\b", rendered(field.group(1) if field else line)) is not None
+        return line not in template and re.search(r"(?i)\bP\s*\d+\b", rendered(field.group(1) if field else line, labels)) is not None
 
     end = table_end(lines, start)
     rows, unparsed, in_findings, same_section, foreign_table, width = [], [], False, False, False, 0
@@ -211,10 +222,10 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
         heading = re.match(r"#{1,6}(?:\s|$)", line) is not None
         if heading:
             in_findings, same_section = FINDINGS_HEADING.match(line) is not None, False
-        if line not in template and ambiguous_markup(line):
+        if line not in template and ambiguous_markup(line, labels):
             unparsed.append(line)
             continue
-        if index and re.search(r"(?i)\bP$", rendered(lines[index - 1])) and re.match(r"\d", rendered(line)):
+        if index and re.search(r"(?i)\bP$", rendered(lines[index - 1], labels)) and re.match(r"\d", rendered(line, labels)):
             unparsed.append(line)
             continue
         if "|" not in line:
@@ -226,7 +237,7 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
             header, width = [cell.lower() for cell in cells(line)], len(cells(line))
             foreign_table = (index + 1 < len(lines) and re.fullmatch(SEPARATOR, lines[index + 1]) is not None
                              and header[0] != "id" and not any("severidade" in cell for cell in header))
-        shaped = ((in_table and (not foreign_table or len(cells(line)) != width)) or any(re.match(r"(?i)P\s*\d", rendered(cell)) for cell in cells(line))
+        shaped = ((in_table and (not foreign_table or len(cells(line)) != width)) or any(re.match(r"(?i)P\s*\d", rendered(cell, labels)) for cell in cells(line))
                   or cites_severity(line))
         if in_findings and not same_section and not heading and line.startswith("|"):
             if not line.startswith("| ID ") and not re.fullmatch(SEPARATOR, line):
@@ -1007,12 +1018,15 @@ class ReviewHandoffTest(unittest.TestCase):
             for tail in (f"\n## Achados complementares\n\n{severity}: contrato crítico aberto\n",
                          f"\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| contrato | {severity} aberto |\n"):
                 with self.subTest(case=name, tail=tail), tempfile.TemporaryDirectory() as tmp:
-                    self.assertTrue([problem for problem in verdict_problems(approved + tail)
+                    text = approved + tail + "\n[P]: #\n[r]: #\n"
+                    self.assertTrue([problem for problem in verdict_problems(text)
                                      if problem.startswith("linha de achado não interpretável")])
                     case = Path(tmp) / "caso"
                     shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
-                    (case / "plano/review-verdict.md").write_text(approved + tail, encoding="utf-8")
+                    (case / "plano/review-verdict.md").write_text(text, encoding="utf-8")
                     self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        undefined = "\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| contrato | P[1] |\n\nNota: [P]1 sem definição.\n"
+        self.assertEqual([], verdict_problems(approved + undefined))
         links = ("\n## Notas do revisor\n\nVer [relatório](docs/P1-contrato.md), ![diagrama](img/P0.png) e [notas][P1].\n"
                  "\n[P1]: docs/p1.md\n")
         self.assertEqual([], verdict_problems(approved + links))
