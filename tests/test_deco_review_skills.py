@@ -782,6 +782,9 @@ class ReviewHandoffTest(unittest.TestCase):
         structural = {
             "sem título inicial": approved[approved.index("\n") + 1:],
             "linha em branco antes do título": "\n" + approved,
+            "tabulação final em texto": approved + "\nNota do revisor sem ressalvas.\t\n",
+            "tabulação final em campo": approved.replace("- **Condições**: nenhuma", "- **Condições**: nenhuma\t"),
+            "tabulação final no título": approved.replace("Plan Gate aprovado\n", "Plan Gate aprovado\t\n", 1),
             "título do modelo repetido": approved + "\n# Review Verdict — modelo da rodada\n",
             "segundo separador na tabela": approved + separator + "\n",
             "separador de outra largura": approved.replace(separator, "| --- | --- |"),

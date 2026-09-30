@@ -128,7 +128,7 @@ def verdict_structure_problems(text: str) -> list[str]:
                 and "<preencher>" not in line and line not in {VERDICT_TABLE_HEADER, separator}}
     fields = set(template_fields(REVIEW_VERDICT))
     problems, table, last_heading = [], "ausente", -1
-    lines = [raw.rstrip() for raw in text.splitlines()]
+    lines = [raw.rstrip(" ") for raw in text.splitlines()]  # só o espaço comum final é neutro
     if not lines or not (lines[0].startswith("# ") and plain_text(lines[0][2:])):
         problems.append("Verdict sem título inicial")
     for index, line in enumerate(lines):
