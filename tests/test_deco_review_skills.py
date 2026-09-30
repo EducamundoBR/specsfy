@@ -153,8 +153,10 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
 
     Em seção cujo título fala de achados, cada linha de tabela é achado e qualquer outra linha
     com `|` é não interpretável. Fora dela, tabelas de outras finalidades (como a de condições do
-    parecer) são ignoradas, salvo linha com a forma de achado: mesmo número de colunas do modelo
-    ou célula iniciada por severidade `P<n>`. Na seção da tabela, depois dela, vale a regra anterior.
+    parecer) são ignoradas quando são tabela válida (cabeçalho seguido de separador) cujo cabeçalho
+    não é de achados (`ID` ou `Severidade`). Linha solta sem separador, tabela com cabeçalho de achados
+    e célula iniciada por severidade `P<n>` são não interpretáveis. Na seção da tabela, depois dela,
+    vale a regra anterior.
     Achado só existe em tabela: severidade `P<n>` citada em texto, lista ou valor de campo, fora de
     linha idêntica ao modelo de T006, também é não interpretável.
     """
@@ -167,8 +169,8 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
         field = re.fullmatch(r"- \*\*.+?\*\*: (.*)", line)
         return line not in template and re.search(r"(?i)\bP\s*\d+\b", field.group(1) if field else line) is not None
 
-    end, columns = table_end(lines, start), len(cells(lines[start]))
-    rows, unparsed, in_findings, same_section = [], [], False, False
+    end = table_end(lines, start)
+    rows, unparsed, in_findings, same_section, foreign_table = [], [], False, False, False
     for index, line in enumerate(lines):
         if start <= index < end:
             continue
@@ -180,7 +182,12 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
             if cites_severity(line):
                 unparsed.append(line)
             continue
-        shaped = (len(cells(line)) == columns or any(re.match(r"(?i)P\s*\d", cell) for cell in cells(line))
+        in_table = line.startswith("|")
+        if in_table and (index == 0 or not lines[index - 1].startswith("|")):
+            header = [cell.lower() for cell in cells(line)]
+            foreign_table = (index + 1 < len(lines) and re.fullmatch(SEPARATOR, lines[index + 1]) is not None
+                             and header[0] != "id" and not any("severidade" in cell for cell in header))
+        shaped = ((in_table and not foreign_table) or any(re.match(r"(?i)P\s*\d", cell) for cell in cells(line))
                   or cites_severity(line))
         if in_findings and not same_section and not heading and line.startswith("|"):
             if not line.startswith("| ID ") and not re.fullmatch(SEPARATOR, line):
@@ -903,6 +910,25 @@ class ReviewHandoffTest(unittest.TestCase):
                 self.assertIn(old, text)
                 (case / artifact).write_text(text.replace(old, new), encoding="utf-8")
                 self.assertTrue(write_unlock_problems(case), "campo duplicado liberou a escrita")
+
+    def test_foreign_tables_are_told_apart_from_findings_by_header(self) -> None:
+        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        tests_table = ("\n## Testes\n\n| Comando | Resultado | Duração | Ambiente | Observação |\n"
+                       "| --- | --- | --- | --- | --- |\n| python3 -B -m unittest | 67 OK | 0,4 s | local | sem rede |\n"
+                       "| make verify-version | 0.22.2 | 1 s | local | sem rede |\n")
+        self.assertEqual([], verdict_problems(approved + tests_table))
+        self.assertEqual(["P3"], [severity for severity, _ in findings(approved + tests_table)])
+        blocked = {
+            "tabela com cabeçalho de achados": "\n## Evidências\n\n| ID | Severidade P0–P3 | Fonte | Impacto | Correção |\n"
+                                               "| --- | --- | --- | --- | --- |\n| E-1 | alta | fonte | impacto | correção |\n",
+            "coluna de severidade": "\n## Evidências\n\n| Item | Severidade |\n| --- | --- |\n| E-1 | alta |\n",
+            "linha solta sem separador": "\n## Notas do revisor\n\n| E-2 | alta | fonte | impacto | correção |\n",
+            "severidade em tabela alheia": tests_table + "| teste extra | P1 aberto | 1 s | local | sem rede |\n",
+        }
+        for name, tail in blocked.items():
+            with self.subTest(case=name):
+                self.assertTrue([problem for problem in verdict_problems(approved + tail)
+                                 if problem.startswith("linha de achado não interpretável")])
 
     def test_spaced_or_disguised_severity_keeps_write_locked(self) -> None:
         approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
