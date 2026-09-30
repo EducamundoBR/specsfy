@@ -500,6 +500,9 @@ def write_unlock_problems(case: Path) -> list[str]:
             problems.append("revisão do plano não corresponde à unidade")
         elif any(severity in {"P0", "P1"} for severity, _ in findings(verdict_text)):
             problems.append("Verdict APROVADO com achado P0 ou P1")
+        elif any(row[1] == "P2" and not re.search(rf"(?<![\w-]){re.escape(row[0])}(?![\w-])", reviewed.get("Condições", ""))
+                 for row in finding_rows(verdict_text)):
+            problems.append("Verdict APROVADO com achado P2 sem correção ou justificativa aceita")
     if risk == "CRÍTICO":
         gate = case / "gate-humano.md"
         values = verdict_fields(gate.read_text(encoding="utf-8")) if gate.is_file() else {}
@@ -728,6 +731,21 @@ class ReviewHandoffTest(unittest.TestCase):
                 (copy / "gate-humano.md").write_text(gate.replace("2026-01-10", value), encoding="utf-8")
                 self.assertEqual(["gate humano sem data válida"], write_unlock_problems(copy))
         self.assertEqual([], write_unlock_problems(complete))
+
+    def test_approved_verdict_with_untreated_p2_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p2-sem-condicao"
+        self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p2-sem-condicao")
+        self.assertEqual(["Verdict APROVADO com achado P2 sem correção ou justificativa aceita"],
+                         write_unlock_problems(case))
+        verdict = (case / "plano/review-verdict.md").read_text(encoding="utf-8")
+        for name, condition in {"justificativa aceita": "P-2: justificativa aceita pelo revisor; rollback coberto em T013",
+                                "correção exigida": "corrigir P-2 antes da escrita"}.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                accepted = Path(tmp) / "caso"
+                shutil.copytree(case, accepted)
+                (accepted / "plano/review-verdict.md").write_text(
+                    verdict.replace("- **Condições**: nenhuma", f"- **Condições**: {condition}"), encoding="utf-8")
+                self.assertEqual([], write_unlock_problems(accepted))
 
     def test_critical_gate_dated_after_the_write_keeps_write_locked(self) -> None:
         complete = ROOT / WRITE_UNLOCK / "critico-completo"
