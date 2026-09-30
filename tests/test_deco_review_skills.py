@@ -500,9 +500,7 @@ def write_unlock_problems(case: Path) -> list[str]:
             problems.append("revisão do plano não corresponde à unidade")
         elif any(severity in {"P0", "P1"} for severity, _ in findings(verdict_text)):
             problems.append("Verdict APROVADO com achado P0 ou P1")
-        elif any(row[1] == "P2" and not re.search(
-                     rf"(?i)(?<![\w-]){re.escape(row[0])}(?![\w-])\s*[:—–-]?\s*justificativa aceita\b",
-                     normalized(reviewed.get("Condições", "")))
+        elif any(row[1] == "P2" and not p2_accepted(row[0], reviewed.get("Condições", ""))
                  for row in finding_rows(verdict_text)):
             problems.append("Verdict APROVADO com achado P2 sem correção ou justificativa aceita")
     if risk == "CRÍTICO":
@@ -520,6 +518,14 @@ def write_unlock_problems(case: Path) -> list[str]:
         elif decided > date.today():
             problems.append("gate humano com data futura")
     return problems
+
+
+def p2_accepted(finding_id: str, conditions: str) -> bool:
+    """Aceite inequívoco: toda cláusula de `Condições` que cita o ID é exatamente `<ID>: justificativa aceita`."""
+    cited = [clause.strip() for clause in normalized(conditions).split(";")
+             if re.search(rf"(?<![\w-]){re.escape(finding_id)}(?![\w-])", clause)]
+    return bool(cited) and all(
+        re.fullmatch(rf"(?i){re.escape(finding_id)}\s*[:—–-]?\s*justificativa aceita\.?", clause) for clause in cited)
 
 
 def calendar_date(value: str) -> date | None:
@@ -822,8 +828,12 @@ class ReviewHandoffTest(unittest.TestCase):
         verdict = (case / "plano/review-verdict.md").read_text(encoding="utf-8")
         blocked = ["Verdict APROVADO com achado P2 sem correção ou justificativa aceita"]
         conditions = {
-            "justificativa aceita": ("P-2: justificativa aceita pelo revisor; rollback coberto em T013", []),
-            "justificativa aceita sem pontuação": ("P-2 justificativa aceita, risco residual registrado", []),
+            "justificativa aceita": ("P-2: justificativa aceita; rollback coberto em T013", []),
+            "justificativa aceita sem pontuação": ("P-2 justificativa aceita", []),
+            "aceite condicionado a decisão futura": ("P-2: justificativa aceita somente após aprovação humana", blocked),
+            "aceite com ressalva": ("P-2: justificativa aceita, exceto rollback", blocked),
+            "aceite reaberto em outra cláusula": ("P-2: justificativa aceita; P-2 reaberto pelo decisor", blocked),
+            "aceite seguido de negação": ("P-2: justificativa aceita? não", blocked),
             "correção pendente": ("corrigir P-2 antes da escrita", blocked),
             "ID citado sem aceite": ("P-2 em análise; justificativa aceita para outro ponto", blocked),
             "aceite de outro achado": ("P-20: justificativa aceita", blocked),
