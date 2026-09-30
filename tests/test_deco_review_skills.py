@@ -160,9 +160,10 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
 
     Em seção cujo título fala de achados, cada linha de tabela é achado e qualquer outra linha
     com `|` é não interpretável. Fora dela, tabelas de outras finalidades (como a de condições do
-    parecer) são ignoradas quando são tabela válida (cabeçalho seguido de separador) cujo cabeçalho
-    não é de achados (`ID` ou `Severidade`). Linha solta sem separador, tabela com cabeçalho de achados
-    e célula iniciada por severidade `P<n>` são não interpretáveis. Na seção da tabela, depois dela,
+    parecer) são ignoradas quando são tabela válida (cabeçalho seguido de separador, todas as linhas
+    com a largura do cabeçalho) cujo cabeçalho não é de achados (`ID` ou `Severidade`). Linha solta
+    sem separador, linha de outra largura, tabela com cabeçalho de achados e célula iniciada por
+    severidade `P<n>` são não interpretáveis. Na seção da tabela, depois dela,
     vale a regra anterior.
     Achado só existe em tabela: severidade `P<n>` citada em texto, lista ou valor de campo, fora de
     linha idêntica ao modelo de T006, também é não interpretável.
@@ -177,7 +178,7 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
         return line not in template and re.search(r"(?i)\bP\s*\d+\b", rendered(field.group(1) if field else line)) is not None
 
     end = table_end(lines, start)
-    rows, unparsed, in_findings, same_section, foreign_table = [], [], False, False, False
+    rows, unparsed, in_findings, same_section, foreign_table, width = [], [], False, False, False, 0
     for index, line in enumerate(lines):
         if start <= index < end:
             continue
@@ -194,10 +195,10 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
             continue
         in_table = line.startswith("|")
         if in_table and (index == 0 or not lines[index - 1].startswith("|")):
-            header = [cell.lower() for cell in cells(line)]
+            header, width = [cell.lower() for cell in cells(line)], len(cells(line))
             foreign_table = (index + 1 < len(lines) and re.fullmatch(SEPARATOR, lines[index + 1]) is not None
                              and header[0] != "id" and not any("severidade" in cell for cell in header))
-        shaped = ((in_table and not foreign_table) or any(re.match(r"(?i)P\s*\d", rendered(cell)) for cell in cells(line))
+        shaped = ((in_table and (not foreign_table or len(cells(line)) != width)) or any(re.match(r"(?i)P\s*\d", rendered(cell)) for cell in cells(line))
                   or cites_severity(line))
         if in_findings and not same_section and not heading and line.startswith("|"):
             if not line.startswith("| ID ") and not re.fullmatch(SEPARATOR, line):
@@ -934,6 +935,10 @@ class ReviewHandoffTest(unittest.TestCase):
             "coluna de severidade": "\n## Evidências\n\n| Item | Severidade |\n| --- | --- |\n| E-1 | alta |\n",
             "linha solta sem separador": "\n## Notas do revisor\n\n| E-2 | alta | fonte | impacto | correção |\n",
             "severidade em tabela alheia": tests_table + "| teste extra | P1 aberto | 1 s | local | sem rede |\n",
+            "linha mais larga que o cabeçalho": "\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n"
+                                                "| E-1 | alta | fonte | impacto | correção |\n",
+            "linha mais estreita que o cabeçalho": "\n## Testes\n\n| Teste | Resultado |\n| --- | --- |\n| E-1 |\n",
+            "separador de outra largura": "\n## Testes\n\n| Teste | Resultado |\n| --- | --- | --- |\n| contrato | ok |\n",
         }
         for name, tail in blocked.items():
             with self.subTest(case=name):
