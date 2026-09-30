@@ -754,6 +754,7 @@ class ReviewHandoffTest(unittest.TestCase):
         separator = "| --- | --- | --- | --- | --- |"
         structural = {
             "sem título inicial": approved[approved.index("\n") + 1:],
+            "linha em branco antes do título": "\n" + approved,
             "título do modelo repetido": approved + "\n# Review Verdict — modelo da rodada\n",
             "segundo separador na tabela": approved + separator + "\n",
             "separador de outra largura": approved.replace(separator, "| --- | --- |"),

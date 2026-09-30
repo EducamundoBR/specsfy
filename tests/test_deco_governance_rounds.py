@@ -126,13 +126,14 @@ def verdict_structure_problems(text: str) -> list[str]:
     verbatim = {line for line in model if line.strip() and not line.startswith("#") and not FIELD.fullmatch(line)
                 and "<preencher>" not in line and line not in {VERDICT_TABLE_HEADER, separator}}
     fields = set(template_fields(REVIEW_VERDICT))
-    problems, table, started, last_heading = [], "ausente", False, -1
-    for line in (raw.rstrip() for raw in text.splitlines()):
+    problems, table, last_heading = [], "ausente", -1
+    lines = [raw.rstrip() for raw in text.splitlines()]
+    if not lines or not (lines[0].startswith("# ") and plain_text(lines[0][2:])):
+        problems.append("Verdict sem título inicial")
+    for index, line in enumerate(lines):
         if table in {"cabeçalho", "linhas"} and not line.startswith("|"):
             table = "encerrada"
         field = re.fullmatch(r"- \*\*(.+?)\*\*: (.*)", line)
-        if line and not started and not (line.startswith("# ") and plain_text(line[2:])):
-            problems.append("Verdict sem título inicial")
         if line in headings:  # cabeçalho do modelo: no máximo uma vez, na ordem do modelo
             allowed = headings.index(line) > last_heading
             last_heading = max(last_heading, headings.index(line))
@@ -145,13 +146,12 @@ def verdict_structure_problems(text: str) -> list[str]:
             allowed = finding_row_allowed(line)
         elif not line or line in verbatim:
             allowed = True
-        elif line.startswith("# ") and not started:
+        elif index == 0 and line.startswith("# "):
             allowed = plain_text(line[2:])
         elif field and field.group(1) in fields:
             allowed = plain_text(field.group(2))
         else:
             allowed = not BLOCK_START.match(line) and not line.startswith("#") and plain_text(line)
-        started = started or bool(line)
         if not allowed:
             problems.append(f"linha fora do contrato do Verdict: {line}")
     return problems
