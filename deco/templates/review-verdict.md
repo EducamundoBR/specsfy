@@ -76,8 +76,8 @@ sem interpretar a apresentação do Markdown.
   barra invertida, entidade HTML nem `_` fora de palavra; nas células, a única
   barra invertida aceita é a de `\|`.
 - A coluna de severidade contém exatamente P0, P1, P2 ou P3. Texto simples,
-  valores de campo e as demais células não citam severidade `P<n>` nem terminam
-  em `P` isolado.
+  valores de campo e as demais células não contêm `P` seguido de dígito em
+  nenhuma posição, nem mesmo colado a letras, e não terminam em `P`.
 - Texto simples e valores de campo não começam com recuo, citação, marcador de
   lista ou sublinhado de título.
 - Qualquer outra linha bloqueia a aprovação e a liberação da escrita.

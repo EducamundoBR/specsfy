@@ -1683,9 +1683,11 @@ aceito não foi contornado para satisfazer esse defeito do validador.
      `>`, crase, `*`, `~`, `$`, barra invertida, entidade HTML, `_` fora de
      palavra e qualquer caractere fora da lista de permissão (depois de NFC, só
      letras, números, pontuação, símbolos e o espaço comum; marcas, controles,
-     formatação e outros espaços bloqueiam). Em texto e valores de campo,
-     também a citação de severidade `P<n>`, o `P` isolado no fim da linha (que a
-     quebra suave juntaria ao dígito seguinte) e as linhas iniciadas por recuo,
+     formatação e outros espaços bloqueiam). Em texto, valores de campo e
+     células fora da coluna de severidade, também `P` seguido de dígito em
+     qualquer posição, inclusive colado a letras, e o `P` no fim da linha (que a
+     quebra suave juntaria ao dígito seguinte). Em texto e valores de campo,
+     também as linhas iniciadas por recuo,
      citação, marcador de lista, lista numerada ou sublinhado de título. Também
      são rejeitados cabeçalho fora do modelo, campo fora do modelo, segundo título
      e qualquer tabela além da canônica. Toda linha rejeitada bloqueia a aprovação

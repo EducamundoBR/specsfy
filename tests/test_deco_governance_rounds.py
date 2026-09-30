@@ -95,11 +95,12 @@ def markup_free(value: str) -> bool:
 
 
 def plain_text(value: str) -> bool:
-    """Texto simples do contrato estrutural: sem marcação, sem `|`, sem citar severidade `P<n>` e sem
-    terminar em `P` isolado, que a quebra de linha suave juntaria ao dígito da linha seguinte."""
+    """Texto simples do contrato estrutural: sem marcação, sem `|`, sem `P` seguido de dígito em qualquer
+    posição (inclusive colado a letras) e sem terminar em `P`, que a quebra de linha suave juntaria ao
+    dígito da linha seguinte."""
     value = unicodedata.normalize("NFKC", value)
-    return (markup_free(value) and "|" not in value and re.search(r"(?i)\bP\s*\d+\b", value) is None
-            and re.search(r"(?i)\bP\s*$", value) is None)
+    return (markup_free(value) and "|" not in value and re.search(r"(?i)P\s*\d", value) is None
+            and re.search(r"(?i)P\s*$", value) is None)
 
 
 def finding_row_allowed(line: str) -> bool:

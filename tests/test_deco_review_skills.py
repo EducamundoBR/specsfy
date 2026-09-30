@@ -737,6 +737,7 @@ class ReviewHandoffTest(unittest.TestCase):
             "[P](docs/item(v2).md)1", "referência abreviada": "[P]1", "referência recolhida": "[P][]1",
             "matemática": "$P_1$", "ênfase com sublinhado": "_P_1", "marca combinante invisível": "P\u034f1",
             "seletor de variação": "P\ufe0f1", "espaço fino": "P\u20091", "separador de linha": "P\u20281",
+            "colada a letra": "achadoP1", "colada a sublinhado": "P1_pendente",
         }
         blocked = {f"{name} em texto": f"\nNota do revisor: {value} contrato aberto.\n" for name, value in severities.items()}
         blocked |= {f"{name} em campo": approved.replace("- **Condições**: nenhuma", f"- **Condições**: {value}")
@@ -760,6 +761,8 @@ class ReviewHandoffTest(unittest.TestCase):
             "linha solta de tabela": "\n| P-2 | alta | fonte | impacto | correção |\n",
             "marcação em célula": approved.replace("| leitura mais lenta do plano |", "| leitura [lenta](#) do plano |"),
             "célula vazia": approved.replace("| leitura mais lenta do plano |", "|  |"),
+            "severidade colada no impacto": approved.replace("| leitura mais lenta do plano |", "| P1_pendente no plano |"),
+            "severidade colada na fonte": approved.replace("| spec §14 T003:", "| achadoP1 spec §14 T003:"),
             "severidade citada no impacto": approved.replace("| leitura mais lenta do plano |", "| P1 aberto no plano |"),
             "severidade citada na correção": approved.replace("| renomear sem mudar escopo |", "| resolver o P0 antes |"),
             "quebra suave após campo": approved.replace("- **Condições**: nenhuma", "- **Condições**: nenhuma P\n1 aberto"),
