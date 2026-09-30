@@ -308,9 +308,14 @@ ACTIVE = {"RASCUNHO", "PRONTO PARA REVISÃO", "EM REVISÃO", "CORREÇÕES SOLICI
 CLOSED = {"APROVADO", "REPROVADO", "ENCERRADA SEM APROVAÇÃO"}
 
 
+def artifact_text(path: Path) -> str:
+    """Conteúdo do artefato sem a conversão universal de quebras de linha: CR isolado chega à validação."""
+    return path.read_bytes().decode("utf-8")
+
+
 def round_state(round_dir: Path) -> str:
     state = round_dir / "estado.md"
-    values = verdict_fields(state.read_text(encoding="utf-8")) if state.is_file() else {}
+    values = verdict_fields(artifact_text(state)) if state.is_file() else {}
     return values.get("Estado", "")
 
 
@@ -352,7 +357,7 @@ def current_problems(reviews: Path, gate: str) -> list[str]:
                      if not (path / name).is_file()]
         problems += [f"artefato fora do modelo de T006: {path.name}/{name}" for name in ARTIFACTS_BY_STATE[state]
                      if (path / name).is_file() and not t006_fields_filled(  # rodada encerrada não é revalidada
-                         name, (path / name).read_text(encoding="utf-8"), structural=state not in CLOSED)]
+                         name, artifact_text((path / name)), structural=state not in CLOSED)]
     if len([path for path in rounds if round_state(path) in ACTIVE]) > 1:
         problems.append("mais de uma rodada ativa")
     pointer = reviews / "CURRENT"
@@ -415,16 +420,16 @@ def t006_rounds_module():
 def write_unlock_problems(case: Path) -> list[str]:
     """Regra de AC-035/FR-002: escrita de risco alto só após o plano revisado e aprovado."""
     unit = case / "unidade.md"
-    unit_fields = verdict_fields(unit.read_text(encoding="utf-8")) if unit.is_file() else {}
+    unit_fields = verdict_fields(artifact_text(unit)) if unit.is_file() else {}
     risk = unit_fields.get("Risco", "")
     if risk not in {"ALTO", "CRÍTICO"}:
         return ["risco ausente ou fora de alto e crítico"]
     plan = case / "plano"
     state = round_state(plan) if plan.is_dir() else ""
     request_file = plan / "review-request.md"
-    request_text = request_file.read_text(encoding="utf-8") if request_file.is_file() else ""
+    request_text = artifact_text(request_file) if request_file.is_file() else ""
     verdict_file = plan / "review-verdict.md"
-    verdict = verdict_fields(verdict_file.read_text(encoding="utf-8")).get("Veredito", "") if verdict_file.is_file() else ""
+    verdict = verdict_fields(artifact_text(verdict_file)).get("Veredito", "") if verdict_file.is_file() else ""
     problems = []
     if not state:
         problems.append("revisão do plano ausente")
@@ -437,8 +442,8 @@ def write_unlock_problems(case: Path) -> list[str]:
     else:
         rounds = t006_rounds_module()
         observed_file = case / "base-observada.md"
-        observed = verdict_fields(observed_file.read_text(encoding="utf-8")) if observed_file.is_file() else {}
-        verdict_text = verdict_file.read_text(encoding="utf-8")
+        observed = verdict_fields(artifact_text(observed_file)) if observed_file.is_file() else {}
+        verdict_text = artifact_text(verdict_file)
         checks = [
             rounds.validate_round_artifact(
                 template, text, observed_head=observed.get("HEAD", ""),
@@ -463,7 +468,7 @@ def write_unlock_problems(case: Path) -> list[str]:
             problems.append("Verdict APROVADO com achado P2 sem correção ou justificativa aceita")
     if risk == "CRÍTICO":
         gate = case / "gate-humano.md"
-        values = verdict_fields(gate.read_text(encoding="utf-8")) if gate.is_file() else {}
+        values = verdict_fields(artifact_text(gate)) if gate.is_file() else {}
         person = " ".join(values.get("Pessoa", "").split())
         if not gate.is_file():
             problems.append("gate humano ausente")
@@ -502,10 +507,10 @@ def result_request_problems(case: Path) -> list[str]:
     if not request.is_file():
         return ["resultado sem Review Request próprio"]
     plan = case / "plano" / "review-request.md"
-    text = request.read_text(encoding="utf-8")
-    result, planned = verdict_fields(text), verdict_fields(plan.read_text(encoding="utf-8"))
-    unit = verdict_fields((case / "unidade.md").read_text(encoding="utf-8"))
-    if (request.is_symlink() or request.resolve() == plan.resolve() or text == plan.read_text(encoding="utf-8")
+    text = artifact_text(request)
+    result, planned = verdict_fields(text), verdict_fields(artifact_text(plan))
+    unit = verdict_fields(artifact_text((case / "unidade.md")))
+    if (request.is_symlink() or request.resolve() == plan.resolve() or text == artifact_text(plan)
             or re.fullmatch(r"(?i)plan(?: gate)?", result.get("Gate", "")) or result.get("HEAD") == planned.get("HEAD")):
         return ["um único Review Request para plano e resultado"]
     if result.get("Unidade") != unit.get("Unidade"):
@@ -519,7 +524,7 @@ def result_request_problems(case: Path) -> list[str]:
     if result.get("Base") != planned.get("HEAD"):
         return ["pedido do resultado não parte do HEAD revisado do plano"]
     observed_file = case / "resultado" / "base-observada.md"
-    observed = verdict_fields(observed_file.read_text(encoding="utf-8")) if observed_file.is_file() else {}
+    observed = verdict_fields(artifact_text(observed_file)) if observed_file.is_file() else {}
     rounds = t006_rounds_module()
     if not observed or rounds.validate_round_artifact(
             rounds.REVIEW_REQUEST, text, observed_head=observed.get("HEAD", ""),
@@ -626,10 +631,23 @@ class ReviewHandoffTest(unittest.TestCase):
                              ["artefato fora do modelo de T006: delivery-2026-01-20/review-verdict.md"]),
                 "célula vazia": (verdict.replace("| leitura mais lenta do plano |", "|  |"),
                                  ["artefato fora do modelo de T006: delivery-2026-01-20/review-verdict.md"]),
+                "CR isolado": (verdict + "\nNota do revisor.\rsem ressalvas.\n",
+                               ["artefato fora do modelo de T006: delivery-2026-01-20/review-verdict.md"]),
             }
             for name, (text, expected) in cases.items():
                 with self.subTest(case=name):
-                    (active / "review-verdict.md").write_text(text, encoding="utf-8")
+                    (active / "review-verdict.md").write_bytes(text.encode("utf-8"))
+                    self.assertEqual(expected, current_problems(reviews, "delivery"))
+            (active / "review-verdict.md").write_text(verdict, encoding="utf-8")
+            (active / "estado.md").write_text("- **Estado**: PRONTO PARA RECONFERÊNCIA\n", encoding="utf-8")
+            report = (ROOT / "deco/fixtures/review-round/correction-valid.md").read_text(encoding="utf-8")
+            for name, (text, expected) in {
+                "relatório conforme": (report, []),
+                "relatório com CR isolado": (report + "Nota.\rfim\n",
+                                             ["artefato fora do modelo de T006: delivery-2026-01-20/correction-report.md"]),
+            }.items():
+                with self.subTest(case=name):
+                    (active / "correction-report.md").write_bytes(text.encode("utf-8"))
                     self.assertEqual(expected, current_problems(reviews, "delivery"))
 
     def test_round_suffix_beyond_two_digits_is_never_reused(self) -> None:
@@ -790,6 +808,7 @@ class ReviewHandoffTest(unittest.TestCase):
         structural = {
             "sem título inicial": approved[approved.index("\n") + 1:],
             "linha em branco antes do título": "\n" + approved,
+            "CR isolado em nota inocente": approved + "\nNota do revisor.\rsem ressalvas.\n",
             **{f"veredito contraditório após {name}": approved.replace(
                 "- **Evidências**: leitura integral", f"- **Evidências**: leitura{sep}- **Veredito**: REPROVADO{sep}integral")
                for name, sep in {"U+2028": "\u2028", "U+2029": "\u2029", "U+0085": "\x85", "FF": "\x0c",
@@ -812,11 +831,15 @@ class ReviewHandoffTest(unittest.TestCase):
                     "estrutura fora do modelo passou")
                 case = Path(tmp) / "caso"
                 shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
-                (case / "plano/review-verdict.md").write_text(text, encoding="utf-8")
-                # a leitura em modo texto converte CR isolado em LF: o Veredito duplicado fica vazio e bloqueia
-                expected = ("plano sem revisão concluída" if name.endswith("CR isolado")
-                            else "artefatos do plano fora do contrato de T006")
-                self.assertEqual([expected], write_unlock_problems(case))
+                (case / "plano/review-verdict.md").write_bytes(text.encode("utf-8"))
+                self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        with tempfile.TemporaryDirectory() as tmp:  # CR isolado no Review Request do plano
+            case = Path(tmp) / "caso"
+            shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+            request = case / "plano/review-request.md"
+            request.write_bytes(artifact_text(request).replace("- **Perfil**: governança", "- **Perfil**: governança\rnota")
+                                .encode("utf-8"))
+            self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
         ordered = (approved.replace("- **Unidade**", "## Identificação e proveniência\n\n- **Unidade**")
                    .replace("- **Evidências**", "\n## Evidência e achados\n\n- **Evidências**")
                    .replace("- **Veredito**", "\n## Parecer e encaminhamento\n\n- **Veredito**"))
