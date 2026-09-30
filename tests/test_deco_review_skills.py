@@ -544,8 +544,17 @@ def result_request_problems(case: Path) -> list[str]:
         return ["um único Review Request para plano e resultado"]
     if result.get("Unidade") != unit.get("Unidade"):
         return ["pedido do resultado de outra unidade"]
-    if not t006_fields_filled("review-request.md", text):
-        return ["pedido do resultado fora do modelo de T006"]
+    if not re.fullmatch(r"(?i)delivery(?: gate)?", result.get("Gate", "")):
+        return ["pedido do resultado fora do Delivery Gate"]
+    if result.get("Base") != planned.get("HEAD"):
+        return ["pedido do resultado não parte do HEAD revisado do plano"]
+    observed_file = case / "resultado" / "base-observada.md"
+    observed = verdict_fields(observed_file.read_text(encoding="utf-8")) if observed_file.is_file() else {}
+    rounds = t006_rounds_module()
+    if not observed or rounds.validate_round_artifact(
+            rounds.REVIEW_REQUEST, text, observed_head=observed.get("HEAD", ""),
+            observed_branch=observed.get("Branch", ""), request=text):
+        return ["pedido do resultado fora do contrato de T006"]
     return []
 
 
@@ -760,19 +769,29 @@ class ReviewHandoffTest(unittest.TestCase):
         result = (plan.replace("- **Gate**: Plan", "- **Gate**: Delivery")
                   .replace("- **HEAD**: " + "a" * 40, "- **HEAD**: " + "c" * 40)
                   .replace("- **Base**: " + "b" * 40, "- **Base**: " + "a" * 40))
+        observed = "- **Branch**: fixture/rodada\n- **HEAD**: " + "c" * 40 + "\n"
+        contract = ["pedido do resultado fora do contrato de T006"]
         cases = {
-            "pedido próprio do resultado": (result, []),
-            "sem pedido do resultado": (None, ["resultado sem Review Request próprio"]),
-            "cópia do pedido do plano": (plan, ["um único Review Request para plano e resultado"]),
-            "link para o pedido do plano": ("link", ["um único Review Request para plano e resultado"]),
-            "mesmo HEAD do plano": (result.replace("c" * 40, "a" * 40), ["um único Review Request para plano e resultado"]),
+            "pedido próprio do resultado": (result, observed, []),
+            "sem pedido do resultado": (None, observed, ["resultado sem Review Request próprio"]),
+            "cópia do pedido do plano": (plan, observed, ["um único Review Request para plano e resultado"]),
+            "link para o pedido do plano": ("link", observed, ["um único Review Request para plano e resultado"]),
+            "mesmo HEAD do plano": (result.replace("c" * 40, "a" * 40), observed.replace("c" * 40, "a" * 40),
+                                    ["um único Review Request para plano e resultado"]),
             "outra unidade": (result.replace("SPEC-9999 — plano da página de boas-vindas", "SPEC-9998 — outra unidade"),
-                              ["pedido do resultado de outra unidade"]),
-            "campo em branco": (re.sub(r"(?m)^(- \*\*Testes\*\*:) .*$", r"\1 <preencher>", result),
-                                ["pedido do resultado fora do modelo de T006"]),
+                              observed, ["pedido do resultado de outra unidade"]),
+            "gate de definição": (result.replace("- **Gate**: Delivery", "- **Gate**: Definition"), observed,
+                                  ["pedido do resultado fora do Delivery Gate"]),
+            "base anterior ao plano": (result.replace("- **Base**: " + "a" * 40, "- **Base**: " + "b" * 40), observed,
+                                       ["pedido do resultado não parte do HEAD revisado do plano"]),
+            "branch divergente": (result.replace("- **Branch**: fixture/rodada", "- **Branch**: outra/branch"),
+                                  observed, contract),
+            "HEAD arbitrário": (result.replace("c" * 40, "d" * 40), observed, contract),
+            "sem base observada": (result, None, contract),
+            "campo em branco": (re.sub(r"(?m)^(- \*\*Testes\*\*:) .*$", r"\1 <preencher>", result), observed, contract),
         }
         self.assertNotEqual(plan, result)
-        for name, (content, expected) in cases.items():
+        for name, (content, base, expected) in cases.items():
             with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
                 case = Path(tmp) / "caso"
                 shutil.copytree(source, case)
@@ -783,6 +802,8 @@ class ReviewHandoffTest(unittest.TestCase):
                         request.symlink_to(case / "plano/review-request.md")
                     else:
                         request.write_text(content, encoding="utf-8")
+                    if base is not None:
+                        (case / "resultado/base-observada.md").write_text(base, encoding="utf-8")
                 self.assertEqual(expected, result_request_problems(case))
 
     def test_approved_verdict_with_untreated_p2_keeps_write_locked(self) -> None:
