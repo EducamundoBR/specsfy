@@ -546,6 +546,8 @@ def result_request_problems(case: Path) -> list[str]:
         return ["um único Review Request para plano e resultado"]
     if result.get("Unidade") != unit.get("Unidade"):
         return ["pedido do resultado de outra unidade"]
+    if normalized(result.get("Risco", "")).upper() != normalized(unit.get("Risco", "")).upper():
+        return ["pedido do resultado com risco divergente da unidade"]
     if not re.fullmatch(r"(?i)delivery(?: gate)?", result.get("Gate", "")):
         return ["pedido do resultado fora do Delivery Gate"]
     if result.get("Base") != planned.get("HEAD"):
@@ -782,6 +784,10 @@ class ReviewHandoffTest(unittest.TestCase):
                                     ["um único Review Request para plano e resultado"]),
             "outra unidade": (result.replace("SPEC-9999 — plano da página de boas-vindas", "SPEC-9998 — outra unidade"),
                               observed, ["pedido do resultado de outra unidade"]),
+            "risco rebaixado": (result.replace("- **Risco**: alto", "- **Risco**: baixo"), observed,
+                                ["pedido do resultado com risco divergente da unidade"]),
+            "risco ausente": (result.replace("- **Risco**: alto\n", ""), observed,
+                              ["pedido do resultado com risco divergente da unidade"]),
             "gate de definição": (result.replace("- **Gate**: Delivery", "- **Gate**: Definition"), observed,
                                   ["pedido do resultado fora do Delivery Gate"]),
             "base anterior ao plano": (result.replace("- **Base**: " + "a" * 40, "- **Base**: " + "b" * 40), observed,

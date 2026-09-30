@@ -140,7 +140,7 @@ ausente, incompleta ou contraditória mantém a escrita bloqueada.
 | Risco crítico sem gate humano registrado, ou sem decisão, pessoa ou data de calendário real não posterior à escrita | Bloquear a escrita mesmo com o plano aprovado. |
 | Resultado de risco alto sem Review Request próprio depois da escrita | Recusar o fechamento; gravar o pedido do resultado. |
 | Um único Review Request cobrindo plano e resultado | Recusar; separar em dois artefatos. |
-| Review Request do resultado fora do Delivery Gate, com base diferente do HEAD revisado do plano ou fora do contrato de T006 com a base observada | Recusar o fechamento; o resultado parte do plano revisado e é conferido na própria base. |
+| Review Request do resultado de outra unidade ou de outro risco, fora do Delivery Gate, com base diferente do HEAD revisado do plano ou fora do contrato de T006 com a base observada | Recusar o fechamento; o resultado parte do plano revisado e é conferido na própria base. |
 
 ### AC-036 — Proveniência insuficiente não fecha a rodada
 
