@@ -66,9 +66,10 @@ sem interpretar a apresentação do Markdown.
 
 - A tabela de achados deste modelo é a única fonte de P0, P1, P2 e P3: no máximo
   uma, com o cabeçalho exato, o separador e uma linha por achado.
-- Fora dela, o Verdict contém somente título `#`, os cabeçalhos `##` deste modelo,
-  os campos deste modelo (uma vez cada), linhas idênticas às deste modelo e texto
-  simples.
+- Fora dela, o Verdict contém somente título `#` na primeira linha, os cabeçalhos
+  `##` deste modelo no máximo uma vez e na ordem do modelo, os campos deste modelo
+  (uma vez cada), linhas idênticas à prosa e à tabela de condições deste modelo e
+  texto simples.
 - Texto simples, valores de campo e células não usam `[`, `]`, `<`, `>`, crase,
   `*`, `~`, `$`, barra invertida, entidade HTML nem `_` fora de palavra; nas
   células, a única barra invertida aceita é a de `\|`.

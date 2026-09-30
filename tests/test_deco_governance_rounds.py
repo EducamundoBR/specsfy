@@ -111,23 +111,33 @@ def finding_row_allowed(line: str) -> bool:
 def verdict_structure_problems(text: str) -> list[str]:
     """Adendo de 30/09/2026 à T006: o Verdict só aceita a estrutura do modelo (fail-closed).
 
-    Aceita linhas em branco, título `#` inicial, linhas idênticas às do modelo (cabeçalhos `##`,
-    prosa e tabela de condições), campos do modelo com valor em texto simples e uma única tabela
-    canônica de achados. Qualquer outra linha é conteúdo fora do contrato.
+    Aceita linhas em branco, título `#` como primeira linha, os cabeçalhos `##` do modelo no máximo uma
+    vez e na ordem do modelo, linhas idênticas à prosa e à tabela de condições do modelo, campos do
+    modelo com valor em texto simples e uma única tabela canônica de achados. Qualquer outra linha é
+    conteúdo fora do contrato.
     """
     model = (ROOT / REVIEW_VERDICT).read_text(encoding="utf-8").splitlines()
-    verbatim = {line for line in model if line.strip() and not FIELD.fullmatch(line)
-                and line != VERDICT_TABLE_HEADER and "<preencher>" not in line}
+    headings = [line for line in model if line.startswith("## ")]
+    separator = next(line for line in model
+                     if TABLE_SEPARATOR.fullmatch(line) and line.count("|") == VERDICT_TABLE_HEADER.count("|"))
+    verbatim = {line for line in model if line.strip() and not line.startswith("#") and not FIELD.fullmatch(line)
+                and "<preencher>" not in line and line not in {VERDICT_TABLE_HEADER, separator}}
     fields = set(template_fields(REVIEW_VERDICT))
-    problems, table, started = [], "ausente", False
+    problems, table, started, last_heading = [], "ausente", False, -1
     for line in (raw.rstrip() for raw in text.splitlines()):
         if table in {"cabeçalho", "linhas"} and not line.startswith("|"):
             table = "encerrada"
         field = re.fullmatch(r"- \*\*(.+?)\*\*: (.*)", line)
-        if line == VERDICT_TABLE_HEADER and table == "ausente":
+        if line and not started and not (line.startswith("# ") and plain_text(line[2:])):
+            problems.append("Verdict sem título inicial")
+        if line in headings:  # cabeçalho do modelo: no máximo uma vez, na ordem do modelo
+            allowed = headings.index(line) > last_heading
+            last_heading = max(last_heading, headings.index(line))
+        elif line == VERDICT_TABLE_HEADER and table == "ausente":
             allowed, table = True, "cabeçalho"
         elif table == "cabeçalho":
-            allowed, table = TABLE_SEPARATOR.fullmatch(line) is not None, "linhas"
+            allowed, table = line == separator or (
+                TABLE_SEPARATOR.fullmatch(line) is not None and line.count("|") == separator.count("|")), "linhas"
         elif table == "linhas":
             allowed = finding_row_allowed(line)
         elif not line or line in verbatim:

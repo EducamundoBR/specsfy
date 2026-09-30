@@ -750,6 +750,27 @@ class ReviewHandoffTest(unittest.TestCase):
                 shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
                 (case / "plano/review-verdict.md").write_text(text, encoding="utf-8")
                 self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        separator = "| --- | --- | --- | --- | --- |"
+        structural = {
+            "sem título inicial": approved[approved.index("\n") + 1:],
+            "título do modelo repetido": approved + "\n# Review Verdict — modelo da rodada\n",
+            "segundo separador na tabela": approved + separator + "\n",
+            "separador de outra largura": approved.replace(separator, "| --- | --- |"),
+            "cabeçalho do modelo repetido": approved + "\n## Parecer e encaminhamento\n\n## Parecer e encaminhamento\n",
+            "cabeçalhos fora de ordem": approved + "\n## Parecer e encaminhamento\n\n## Identificação e proveniência\n",
+        }
+        for name, text in structural.items():
+            with self.subTest(estrutura=name), tempfile.TemporaryDirectory() as tmp:
+                self.assertTrue([problem for problem in verdict_problems(text) if problem.startswith(
+                    ("linha fora do contrato do Verdict", "Verdict sem título inicial"))], "estrutura fora do modelo passou")
+                case = Path(tmp) / "caso"
+                shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+                (case / "plano/review-verdict.md").write_text(text, encoding="utf-8")
+                self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        ordered = (approved.replace("- **Unidade**", "## Identificação e proveniência\n\n- **Unidade**")
+                   .replace("- **Evidências**", "\n## Evidência e achados\n\n- **Evidências**")
+                   .replace("- **Veredito**", "\n## Parecer e encaminhamento\n\n- **Veredito**"))
+        self.assertEqual([], verdict_problems(ordered))
         accepted = {
             "prosa do modelo": "\n" + template[template.index("Usar `Nenhum`"):template.index("## Parecer")],
             "seção do parecer e tabela de condições": "\n" + template[template.index("## Parecer"):template.index("- **Veredito**")]

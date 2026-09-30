@@ -1673,8 +1673,10 @@ aceito não foi contornado para satisfazer esse defeito do validador.
      achado, com severidade exatamente P0, P1, P2 ou P3 e as demais células em
      texto simples, sem citar severidade). Fora dela, o Verdict aceita somente
      linhas em branco, título `#`
-     inicial, os cabeçalhos `##` do modelo, linhas idênticas às do modelo, os
-     campos do modelo uma vez cada e texto simples. Nas células, `\|` é o único
+     na primeira linha, os cabeçalhos `##` do modelo no máximo uma vez e na ordem
+     do modelo, linhas idênticas à prosa e à tabela de condições do modelo, os
+     campos do modelo uma vez cada e texto simples. O separador da tabela tem a
+     largura do cabeçalho. Nas células, `\|` é o único
      escape aceito.
   3. **Sintaxe rejeitada**: em texto, valores de campo e células, `[`, `]`, `<`,
      `>`, crase, `*`, `~`, `$`, barra invertida, entidade HTML, `_` fora de
