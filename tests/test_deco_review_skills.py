@@ -327,15 +327,15 @@ ARTIFACTS_BY_STATE = {
 }
 
 
-def t006_fields_filled(name: str, text: str) -> bool:
+def t006_fields_filled(name: str, text: str, structural: bool = True) -> bool:
     """Artefato completo: todo campo do modelo de T006 presente, único e preenchido (`NÃO REGISTRADO` persiste);
-    o Verdict também segue o contrato estrutural do adendo de 30/09/2026."""
+    com `structural`, o Verdict também segue o contrato estrutural do adendo de 30/09/2026."""
     rounds = t006_rounds_module()
     template = {"review-request.md": rounds.REVIEW_REQUEST, "review-verdict.md": rounds.REVIEW_VERDICT,
                 "correction-report.md": rounds.CORRECTION_REPORT}[name]
     values = {field: " ".join(value.split()) for field, value in verdict_fields(text).items()}
     return (all(values.get(field) not in {None, "", "<preencher>"} for field in rounds.template_fields(template))
-            and (name != "review-verdict.md" or not rounds.verdict_structure_problems(text)))
+            and (not structural or name != "review-verdict.md" or not rounds.verdict_structure_problems(text)))
 
 
 def current_problems(reviews: Path, gate: str) -> list[str]:
@@ -350,7 +350,8 @@ def current_problems(reviews: Path, gate: str) -> list[str]:
         problems += [f"artefato ausente: {path.name}/{name}" for name in ARTIFACTS_BY_STATE[state]
                      if not (path / name).is_file()]
         problems += [f"artefato fora do modelo de T006: {path.name}/{name}" for name in ARTIFACTS_BY_STATE[state]
-                     if (path / name).is_file() and not t006_fields_filled(name, (path / name).read_text(encoding="utf-8"))]
+                     if (path / name).is_file() and not t006_fields_filled(  # rodada encerrada não é revalidada
+                         name, (path / name).read_text(encoding="utf-8"), structural=state not in CLOSED)]
     if len([path for path in rounds if round_state(path) in ACTIVE]) > 1:
         problems.append("mais de uma rodada ativa")
     pointer = reviews / "CURRENT"
@@ -594,8 +595,6 @@ class ReviewHandoffTest(unittest.TestCase):
                                          lambda text: text.replace("- **HEAD**: ", "- **HEAD**: " + "d" * 40 + "\n- **HEAD**: ", 1)),
             "veredito duplicado com recuo": ("plan-2026-01-10/review-verdict.md",
                                              lambda text: text + "  - **Veredito**: REPROVADO\n"),
-            "parecer fora do contrato estrutural": ("plan-2026-01-10/review-verdict.md",
-                                                    lambda text: text + "\n[P]1 contrato aberto\n"),
         }
         for name, (artifact, change) in cases.items():
             with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
@@ -605,6 +604,30 @@ class ReviewHandoffTest(unittest.TestCase):
                 path = reviews / artifact
                 path.write_text(change(path.read_text(encoding="utf-8")), encoding="utf-8")
                 self.assertEqual([f"artefato fora do modelo de T006: {artifact}"], current_problems(reviews, "delivery"))
+
+    def test_structural_contract_applies_to_active_rounds_only(self) -> None:
+        """Adendo de 30/09/2026: rodada encerrada é imutável e não é revalidada; a ativa cumpre o contrato."""
+        with tempfile.TemporaryDirectory() as tmp:
+            reviews = Path(tmp) / "reviews"
+            shutil.copytree(ROOT / HANDOFF_FIXTURES / "valid" / "reviews", reviews)
+            closed = reviews / "plan-2026-01-10" / "review-verdict.md"
+            historic = closed.read_text(encoding="utf-8")
+            closed.write_text(historic + "\n| Teste | Resultado |\n| --- | --- |\n| contrato | ok |\n", encoding="utf-8")
+            self.assertEqual([], current_problems(reviews, "delivery"))
+            active = reviews / "delivery-2026-01-20"
+            (active / "estado.md").write_text("- **Estado**: CORREÇÕES SOLICITADAS\n", encoding="utf-8")
+            verdict = historic.replace("reviews/plan-2026-01-10", "reviews/delivery-2026-01-20")
+            cases = {
+                "conforme": (verdict, []),
+                "marcação": (verdict + "\n[P]1 contrato aberto\n",
+                             ["artefato fora do modelo de T006: delivery-2026-01-20/review-verdict.md"]),
+                "célula vazia": (verdict.replace("| leitura mais lenta do plano |", "|  |"),
+                                 ["artefato fora do modelo de T006: delivery-2026-01-20/review-verdict.md"]),
+            }
+            for name, (text, expected) in cases.items():
+                with self.subTest(case=name):
+                    (active / "review-verdict.md").write_text(text, encoding="utf-8")
+                    self.assertEqual(expected, current_problems(reviews, "delivery"))
 
     def test_round_suffix_beyond_two_digits_is_never_reused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

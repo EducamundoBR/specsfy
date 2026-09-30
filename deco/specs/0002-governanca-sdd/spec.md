@@ -1699,7 +1699,8 @@ aceito não foi contornado para satisfazer esse defeito do validador.
      a bloquear. Rodadas encerradas, como `reviews/plan-gate-2026-09-21/`, são
      imutáveis e não são revalidadas. Mecanismo: `verdict_structure_problems()`
      em `tests/test_deco_governance_rounds.py` (T006), aplicado pelo validador de
-     rodada, pela liberação da escrita e pela validação de `CURRENT`.
+     rodada, pela validação de `CURRENT` somente ao Verdict de rodada ativa e pela
+     liberação da escrita, que é decisão nova, ao Verdict do plano que a sustenta.
   5. **Caminhos descartados**: (B) renderizador CommonMark real. O único
      disponível é `marked`, instalado em `cli/node_modules`, e usá-lo criaria
      dependência da camada `deco/` em relação a `cli/`, contra o caráter aditivo
