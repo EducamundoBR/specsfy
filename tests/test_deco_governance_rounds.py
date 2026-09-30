@@ -99,9 +99,9 @@ def plain_text(value: str) -> bool:
     """Texto simples do contrato estrutural: sem marcação, sem `|`, sem `P` seguido de dígito em qualquer
     posição (inclusive colado a letras) e sem terminar em `P`, que a quebra de linha suave juntaria ao
     dígito da linha seguinte."""
-    value = unicodedata.normalize("NFKC", value)
-    return (markup_free(value) and "|" not in value and re.search(r"(?i)P\s*\d", value) is None
-            and re.search(r"(?i)P\s*$", value) is None)
+    folded = unicodedata.normalize("NFKC", value)  # a lista de permissão vale para o texto original
+    return (markup_free(value) and markup_free(folded) and "|" not in folded
+            and re.search(r"(?i)P\s*\d", folded) is None and re.search(r"(?i)P\s*$", folded) is None)
 
 
 def finding_row_allowed(line: str) -> bool:

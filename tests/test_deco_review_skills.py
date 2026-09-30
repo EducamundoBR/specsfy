@@ -764,6 +764,8 @@ class ReviewHandoffTest(unittest.TestCase):
             "linha solta de tabela": "\n| P-2 | alta | fonte | impacto | correção |\n",
             "marcação em célula": approved.replace("| leitura mais lenta do plano |", "| leitura [lenta](#) do plano |"),
             "célula vazia": approved.replace("| leitura mais lenta do plano |", "|  |"),
+            "espaço não separável em texto livre": "\nNota\u00a0do revisor sem ressalvas.\n",
+            "espaço fino em campo": approved.replace("- **Condições**: nenhuma", "- **Condições**: nenhuma\u2009ressalva"),
             **{f"{name} na borda da célula": approved.replace(
                 "| leitura mais lenta do plano |", f"| {char}leitura mais lenta do plano{char} |")
                for name, char in {"tabulação": "\t", "espaço não separável": "\u00a0", "espaço fino": "\u2009"}.items()},
