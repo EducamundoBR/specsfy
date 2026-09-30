@@ -131,8 +131,11 @@ def verdict_structure_problems(text: str) -> list[str]:
     lines = [raw.rstrip(" ") for raw in text.splitlines()]  # só o espaço comum final é neutro
     if not lines or not (lines[0].startswith("# ") and plain_text(lines[0][2:])):
         problems.append("Verdict sem título inicial")
+    header_without_separator = f"linha fora do contrato do Verdict: {VERDICT_TABLE_HEADER}"
     for index, line in enumerate(lines):
         if table in {"cabeçalho", "linhas"} and not line.startswith("|"):
+            if table == "cabeçalho":
+                problems.append(header_without_separator)
             table = "encerrada"
         field = re.fullmatch(r"- \*\*(.+?)\*\*: (.*)", line)
         if line in headings:  # cabeçalho do modelo: no máximo uma vez, na ordem do modelo
@@ -155,6 +158,8 @@ def verdict_structure_problems(text: str) -> list[str]:
             allowed = not BLOCK_START.match(line) and not line.startswith("#") and plain_text(line)
         if not allowed:
             problems.append(f"linha fora do contrato do Verdict: {line}")
+    if table == "cabeçalho":  # o cabeçalho de achados exige o separador logo depois, mesmo sem achados
+        problems.append(header_without_separator)
     return problems
 
 
