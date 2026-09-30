@@ -57,7 +57,7 @@ Regras fail-closed de `CURRENT`:
 | Destino existe, mas não é pasta | Bloquear. |
 | Nome fora de `<gate>-<AAAA-MM-DD>[-rNN]` ou de gate diferente do gate esperado | Bloquear: rodada incompatível com o gate esperado. |
 | Artefato exigido pelo estado da rodada ausente | Bloquear. |
-| Artefato exigido sem campo do modelo de T006, com separador de linha fora de LF ou CRLF, com campo duplicado, vazio ou `<preencher>`, ou Verdict de rodada ativa fora do contrato estrutural (rodada encerrada não é revalidada) | Bloquear: artefato fora do modelo; `NÃO REGISTRADO` persiste e é tratado no fechamento. |
+| `estado.md` ou artefato exigido com separador de linha fora de LF ou CRLF, artefato sem campo do modelo de T006, com campo duplicado, vazio ou `<preencher>`, ou Verdict de rodada ativa fora do contrato estrutural (rodada encerrada não é revalidada) | Bloquear: artefato fora do modelo; `NÃO REGISTRADO` persiste e é tratado no fechamento. |
 | Destino é pasta de rodada ativa do gate esperado, com artefatos completos | Prosseguir, após conferir branch e HEAD. |
 
 Colisão no mesmo dia:
@@ -140,6 +140,7 @@ ausente, incompleta ou contraditória mantém a escrita bloqueada.
 | Verdict do plano `APROVADO` com achado P0 ou P1, ou com P2 sem aceite inequívoco em `Condições` (toda cláusula separada por `;` que cita o ID é exatamente `<ID>: justificativa aceita`) | Bloquear a escrita: o modelo de T006 exige `CORREÇÕES SOLICITADAS` para P0 e P1. P2 corrigido sai do Verdict na reconferência; correção pendente, ressalva, condição futura ou reabertura mantêm o bloqueio. |
 | Review Request ou Verdict do plano de outra unidade, de outro risco ou de gate diferente do Plan Gate | Bloquear: a revisão não corresponde à unidade que será escrita. |
 | Request ou Verdict do plano fora dos contratos de T006, inclusive base observada divergente, proveniência `NÃO REGISTRADO`, Verdict fora do contrato estrutural ou Verdict que não declara a base, o HEAD e o diff do Request | Bloquear a escrita. |
+| Arquivo de decisão (`unidade.md`, `estado.md`, base observada ou gate humano) com separador de linha fora de LF ou CRLF | Bloquear a escrita: pode esconder uma segunda declaração. |
 | Risco crítico sem gate humano registrado, ou sem decisão, pessoa ou data de calendário real não posterior à escrita | Bloquear a escrita mesmo com o plano aprovado. |
 | Resultado de risco alto sem Review Request próprio depois da escrita | Recusar o fechamento; gravar o pedido do resultado. |
 | Um único Review Request cobrindo plano e resultado | Recusar; separar em dois artefatos. |

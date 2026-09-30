@@ -313,8 +313,15 @@ def artifact_text(path: Path) -> str:
     return path.read_bytes().decode("utf-8")
 
 
+def irregular_breaks(*paths: Path) -> bool:
+    """Fail-closed: arquivo de decisão com separador de linha fora de LF ou CRLF pode esconder declaração."""
+    return any(path.is_file() and t006_rounds_module().IRREGULAR_BREAK.search(artifact_text(path)) for path in paths)
+
+
 def round_state(round_dir: Path) -> str:
     state = round_dir / "estado.md"
+    if irregular_breaks(state):
+        return ""
     values = verdict_fields(artifact_text(state)) if state.is_file() else {}
     return values.get("Estado", "")
 
@@ -419,6 +426,9 @@ def t006_rounds_module():
 
 def write_unlock_problems(case: Path) -> list[str]:
     """Regra de AC-035/FR-002: escrita de risco alto só após o plano revisado e aprovado."""
+    if irregular_breaks(*(case / name for name in ("unidade.md", "plano/estado.md", "base-observada.md",
+                                                   "gate-humano.md"))):
+        return ["arquivo de decisão com separador de linha fora de LF ou CRLF"]
     unit = case / "unidade.md"
     unit_fields = verdict_fields(artifact_text(unit)) if unit.is_file() else {}
     risk = unit_fields.get("Risco", "")
@@ -506,6 +516,8 @@ def result_request_problems(case: Path) -> list[str]:
     request = case / "resultado" / "review-request.md"
     if not request.is_file():
         return ["resultado sem Review Request próprio"]
+    if irregular_breaks(case / "unidade.md", case / "resultado" / "base-observada.md"):
+        return ["arquivo de decisão com separador de linha fora de LF ou CRLF"]
     plan = case / "plano" / "review-request.md"
     text = artifact_text(request)
     result, planned = verdict_fields(text), verdict_fields(artifact_text(plan))
@@ -1003,6 +1015,45 @@ class ReviewHandoffTest(unittest.TestCase):
                 path.write_text(path.read_text(encoding="utf-8").replace("a" * 40, "aaaaaaa" + "f" * 33),
                                 encoding="utf-8")
             self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+
+    def test_decision_files_reject_hidden_declarations_after_bare_cr(self) -> None:
+        blocked = ["arquivo de decisão com separador de linha fora de LF ou CRLF"]
+        cases = {
+            "estado contraditório": ("critico-completo", "plano/estado.md",
+                                     "\nNota.\r- **Estado**: CORREÇÕES SOLICITADAS\n"),
+            "gate humano contraditório": ("critico-completo", "gate-humano.md",
+                                          "\nNota.\r- **Decisão humana**: REPROVADA\n"),
+            "risco contraditório": ("critico-completo", "unidade.md", "\nNota.\r- **Risco**: BAIXO\n"),
+            "base observada contraditória": ("alto-plano-aprovado", "base-observada.md",
+                                             "\nNota.\r- **HEAD**: " + "f" * 40 + "\n"),
+        }
+        for name, (source, artifact, tail) in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                case = Path(tmp) / "caso"
+                shutil.copytree(ROOT / WRITE_UNLOCK / source, case)
+                self.assertEqual([], write_unlock_problems(case))
+                path = case / artifact
+                path.write_bytes((artifact_text(path) + tail).encode("utf-8"))
+                self.assertEqual(blocked, write_unlock_problems(case))
+        with tempfile.TemporaryDirectory() as tmp:
+            reviews = Path(tmp) / "reviews"
+            shutil.copytree(ROOT / HANDOFF_FIXTURES / "valid" / "reviews", reviews)
+            state = reviews / "delivery-2026-01-20" / "estado.md"
+            state.write_bytes((artifact_text(state) + "\nNota.\r- **Estado**: APROVADO\n").encode("utf-8"))
+            self.assertIn("estado desconhecido: delivery-2026-01-20", current_problems(reviews, "delivery"))
+        with tempfile.TemporaryDirectory() as tmp:  # base observada do resultado
+            case = Path(tmp) / "caso"
+            shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+            plan = artifact_text(case / "plano/review-request.md")
+            (case / "resultado").mkdir()
+            (case / "resultado/review-request.md").write_text(
+                plan.replace("- **Gate**: Plan", "- **Gate**: Delivery").replace("- **HEAD**: " + "a" * 40, "- **HEAD**: " + "c" * 40)
+                .replace("- **Base**: " + "b" * 40, "- **Base**: " + "a" * 40), encoding="utf-8")
+            observed = case / "resultado/base-observada.md"
+            observed.write_text("- **Branch**: fixture/rodada\n- **HEAD**: " + "c" * 40 + "\n", encoding="utf-8")
+            self.assertEqual([], result_request_problems(case))
+            observed.write_bytes((artifact_text(observed) + "Nota.\r- **HEAD**: " + "d" * 40 + "\n").encode("utf-8"))
+            self.assertEqual(blocked, result_request_problems(case))
 
     def test_duplicated_fields_keep_write_locked(self) -> None:
         source = ROOT / WRITE_UNLOCK / "critico-completo"
