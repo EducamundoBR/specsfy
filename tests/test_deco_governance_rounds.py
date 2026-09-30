@@ -163,6 +163,21 @@ def verdict_structure_problems(text: str) -> list[str]:
     return problems
 
 
+def same_commit(declared: str, full: str) -> bool:
+    """SHA declarado, abreviado ou completo (7 a 40 dígitos hexadecimais), que é prefixo do SHA do Request."""
+    return re.fullmatch(r"[0-9a-f]{7,40}", declared) is not None and full.startswith(declared)
+
+
+def verdict_matches_request(values: dict[str, str], requested: dict[str, str]) -> bool:
+    """O Verdict declara a mesma base, o mesmo HEAD e o mesmo diff do Request que revisou."""
+    base, head = requested.get("Base", ""), requested.get("HEAD", "")
+    observed = re.fullmatch(r"(\S+) / (\S+)", " ".join(values.get("Base e HEAD observados", "").split()))
+    scope = re.fullmatch(r"(\S+)\.\.(\S+)", values.get("Escopo do diff conferido", "").strip())
+    return (observed is not None and scope is not None
+            and same_commit(observed.group(1), base) and same_commit(observed.group(2), head)
+            and same_commit(scope.group(1), base) and same_commit(scope.group(2), head))
+
+
 def validate_round_artifact(
     template: Path, text: str, *, observed_head: str, observed_branch: str, request: str,
 ) -> list[str]:
@@ -190,6 +205,8 @@ def validate_round_artifact(
             problems.append(f"veredito fora do vocabulário: {values['Veredito']}")
         if values.get("Session ID") == requested.get("Session ID") or values.get("Revisor") == requested.get("Implementador"):
             problems.append("revisor e implementador na mesma sessão")
+        if not verdict_matches_request(values, requested):
+            problems.append("Verdict não corresponde à base, ao HEAD e ao diff do Request")
         problems.extend(verdict_structure_problems(text))
     return problems
 
@@ -440,6 +457,22 @@ class GovernanceRoundsTest(unittest.TestCase):
                 problems = validate_round_artifact(REVIEW_VERDICT, valid + change, observed_head="a" * 40,
                                                    observed_branch="fixture/rodada", request=request)
                 self.assertEqual([f"linha fora do contrato do Verdict: {change.strip()}"], problems)
+
+    def test_verdict_is_bound_to_the_request_base_head_and_diff(self) -> None:
+        valid = self.round_fixture("verdict-valid.md")
+        request = self.round_fixture("request-valid.md")
+        mismatch = ["Verdict não corresponde à base, ao HEAD e ao diff do Request"]
+        cases = {
+            "mesma base, HEAD e diff": (request, valid, []),
+            "HEAD do pedido mudou": (request.replace("a" * 40, "f" * 40), valid, mismatch),
+            "base do pedido mudou": (request.replace("b" * 40, "e" * 40), valid, mismatch),
+            "diff conferido divergente": (request, valid.replace("bbbbbbb..aaaaaaa", "bbbbbbb..ccccccc"), mismatch),
+            "base e HEAD sem SHA": (request, valid.replace("bbbbbbb / aaaaaaa", "base / topo"), mismatch),
+        }
+        for name, (req, verdict, expected) in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(expected, validate_round_artifact(
+                    REVIEW_VERDICT, verdict, observed_head="a" * 40, observed_branch="fixture/rodada", request=req))
 
     def test_duplicated_field_is_rejected_instead_of_last_value_winning(self) -> None:
         unlock = ROOT / "deco/fixtures/review-handoff/write-unlock"

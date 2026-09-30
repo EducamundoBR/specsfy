@@ -23,6 +23,10 @@ a aprovação e pedir revisão independente.
 - **Effort**: <preencher>
 - **Session ID**: <preencher>
 
+`Base e HEAD observados` (`base / HEAD`) e `Escopo do diff conferido`
+(`base..HEAD`) repetem a base e o HEAD do Review Request, com SHA de 7 a 40
+dígitos; divergência bloqueia o uso do parecer.
+
 ## Evidência e achados
 
 - **Evidências**: <preencher>
