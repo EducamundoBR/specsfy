@@ -432,11 +432,11 @@ ARTIFACTS_BY_STATE = {
 
 
 def t006_fields_filled(name: str, text: str) -> bool:
-    """Artefato completo: todo campo do modelo de T006 presente e preenchido (`NÃO REGISTRADO` persiste)."""
+    """Artefato completo: todo campo do modelo de T006 presente, único e preenchido (`NÃO REGISTRADO` persiste)."""
     rounds = t006_rounds_module()
     template = {"review-request.md": rounds.REVIEW_REQUEST, "review-verdict.md": rounds.REVIEW_VERDICT,
                 "correction-report.md": rounds.CORRECTION_REPORT}[name]
-    values = {field: " ".join(value.split()) for field, value in FIELD.findall(text)}
+    values = {field: " ".join(value.split()) for field, value in verdict_fields(text).items()}
     return all(values.get(field) not in {None, "", "<preencher>"} for field in rounds.template_fields(template))
 
 
@@ -691,6 +691,10 @@ class ReviewHandoffTest(unittest.TestCase):
                                         lambda text: re.sub(r"(?m)^- \*\*Testes\*\*: .*\n", "", text)),
             "campo do parecer em branco": ("plan-2026-01-10/review-verdict.md",
                                            lambda text: re.sub(r"(?m)^(- \*\*Session ID\*\*:) .*$", r"\1 <preencher>", text)),
+            "HEAD duplicado no pedido": ("delivery-2026-01-20/review-request.md",
+                                         lambda text: text.replace("- **HEAD**: ", "- **HEAD**: " + "d" * 40 + "\n- **HEAD**: ", 1)),
+            "veredito duplicado com recuo": ("plan-2026-01-10/review-verdict.md",
+                                             lambda text: text + "  - **Veredito**: REPROVADO\n"),
         }
         for name, (artifact, change) in cases.items():
             with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
