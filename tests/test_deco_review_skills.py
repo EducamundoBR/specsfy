@@ -141,7 +141,8 @@ FINDINGS_HEADING = re.compile(r"(?i)^#{1,6}\s.*achad")
 
 
 def cells(line: str) -> list[str]:
-    return [cell.strip() for cell in line.removeprefix("|").removesuffix("|").split("|")]
+    """Células da linha de tabela; `\\|` é pipe literal dentro da célula, não separador."""
+    return [cell.strip() for cell in re.split(r"(?<!\\)\|", line.removeprefix("|").removesuffix("|"))]
 
 
 def finding_rows(text: str) -> list[list[str]]:
@@ -945,6 +946,12 @@ class ReviewHandoffTest(unittest.TestCase):
                        "| make verify-version | 0.22.2 | 1 s | local | sem rede |\n")
         self.assertEqual([], verdict_problems(approved + tests_table))
         self.assertEqual(["P3"], [severity for severity, _ in findings(approved + tests_table)])
+        escaped = "\n## Regras\n\n| Regra | Resultado |\n| --- | --- |\n| A \\| B | ok |\n"
+        self.assertEqual([], verdict_problems(approved + escaped))
+        extra = "\n## Achados complementares\n\n| P-2 | P3 | spec §3: A \\| B | leitura | reescrever |\n"
+        self.assertEqual([], verdict_problems(approved + extra))
+        self.assertEqual([("P-2", "P3", "spec §3: A \\| B")],
+                         [(row[0], row[1], row[2]) for row in finding_rows(approved + extra)][1:])
         blocked = {
             "tabela com cabeçalho de achados": "\n## Evidências\n\n| ID | Severidade P0–P3 | Fonte | Impacto | Correção |\n"
                                                "| --- | --- | --- | --- | --- |\n| E-1 | alta | fonte | impacto | correção |\n",
