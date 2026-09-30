@@ -118,13 +118,18 @@ LINK = re.compile(r"""!?\[([^\]]*)\]\(\s*(?:<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)""
 REFERENCE = re.compile(r"!?\[([^\[\]]*)\](?:\[([^\[\]]*)\])?(?!\()")
 
 
-LIST_ITEM = re.compile(r" {0,3}(?:[-+*]|\d{1,9}[.)])(?:\s|$)")
+LIST_ITEM = re.compile(r"( {0,3}(?:[-+*]|\d{1,9}[.)]))( +|$)")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+REFERENCE_DEFINITION = re.compile(r" {0,3}\[([^\[\]]+)\]:\s*\S")  # definição simples, de uma linha e fora de contêiner
+DEFINITION_LIKE = re.compile(r"\[([^\[\]]+)\]:")
 
 
 def code_lines(text: str) -> set[int]:
-    """Índices das linhas de bloco de código cercado ou recuado, que o Markdown exibe literalmente."""
-    code, fence, in_list, indented, blank = set(), "", False, False, True
+    """Índices das linhas de bloco de código cercado ou recuado, que o Markdown exibe literalmente.
+
+    O recuo do código é medido a partir do conteúdo do item de lista aberto.
+    """
+    code, fence, base, indented, blank = set(), "", 0, False, True
     for index, line in enumerate(line.expandtabs(4) for line in text.splitlines()):
         indent = len(line) - len(line.lstrip(" "))
         if fence:
@@ -136,23 +141,27 @@ def code_lines(text: str) -> set[int]:
             code.add(index)
         elif not line.strip():
             blank = True
-        elif indent >= 4 and (indented or (blank and not in_list)):
+        elif indent >= base + 4 and (indented or blank):
             indented, blank = True, False
             code.add(index)
         else:  # na dúvida, é lista (não código): a lista só termina em linha sem recuo após linha em branco
-            if LIST_ITEM.match(line):
-                in_list = True
+            if item := LIST_ITEM.match(line):
+                spaces = len(item.group(2))
+                base = len(item.group(1)) + (spaces if 1 <= spaces <= 4 else 1)
             elif blank and indent == 0:
-                in_list = False
+                base = 0
             indented = blank = False
     return code
 
 
 def reference_labels(text: str) -> frozenset[str]:
-    """Rótulos com definição `[rótulo]: destino` fora de código; só eles transformam colchetes em link."""
+    """Rótulos que podem estar definidos (`[rótulo]:` em qualquer ponto fora de código); fail-closed, eles
+    transformam colchetes em link."""
     code = code_lines(text)
-    return frozenset(normalized(match.group(1)).lower() for index, line in enumerate(text.splitlines())
-                     if index not in code and (match := re.match(r"\s*\[([^\]]+)\]:\s*\S", line)))
+    return frozenset(normalized(label).lower() for index, line in enumerate(text.splitlines())
+                     if index not in code for label in DEFINITION_LIKE.findall(line))
+
+
 ATTRIBUTE = r"""\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?"""
 TAG = re.compile(  # HTML inline do CommonMark: comentário, CDATA, instrução, declaração, abertura e fechamento
     rf"""<!--.*?-->|<!\[CDATA\[.*?\]\]>|<\?.*?\?>|<![A-Za-z][^>]*>"""
@@ -239,7 +248,7 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
     if start is None:
         return [], []
     template = {normalized(line) for line in (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8").splitlines()}
-    labels, code = reference_labels(text), code_lines(text)
+    labels, code, raw = reference_labels(text), code_lines(text), text.splitlines()
 
     def cites_severity(line: str) -> bool:
         field = re.fullmatch(r"- \*\*.+?\*\*: (.*)", line)
@@ -258,7 +267,8 @@ def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
         heading = re.match(r"#{1,6}(?:\s|$)", line) is not None
         if heading:
             in_findings, same_section = FINDINGS_HEADING.match(line) is not None, False
-        if line not in template and ambiguous_markup(line, labels):
+        if line not in template and (ambiguous_markup(line, labels) or (
+                DEFINITION_LIKE.search(raw[index]) and not REFERENCE_DEFINITION.match(raw[index].expandtabs(4)))):
             unparsed.append(line)
             continue
         if index and re.search(r"(?i)\bP$", rendered(lines[index - 1], labels)) and re.match(r"\d", rendered(line, labels)):
@@ -1096,7 +1106,18 @@ class ReviewHandoffTest(unittest.TestCase):
             "definição em item de lista": "\n## Notas do revisor\n\n- item\n\n    [P]: #\n\n[P]1 contrato aberto\n",
             "definição após continuação do item": "\n## Notas do revisor\n\n- item\n  continuação\n\n    [P]: #\n\n[P]1 aberto\n",
             "definição após continuação preguiçosa": "\n## Notas do revisor\n\n- item\ncontinuação\n\n    [P]: #\n\n[P]1 aberto\n",
+            "definição multilinha": "\n## Notas do revisor\n\n[P]1 contrato aberto\n\n[P]:\n<#>\n",
+            "definição em citação": "\n## Notas do revisor\n\n[P]1 contrato aberto\n\n> [P]: #\n",
+            "definição em lista": "\n## Notas do revisor\n\n[P]1 contrato aberto\n\n- [P]: #\n",
         }
+        for name, tail in visible.items():
+            with self.subTest(liberacao=name), tempfile.TemporaryDirectory() as tmp:
+                case = Path(tmp) / "caso"
+                shutil.copytree(ROOT / WRITE_UNLOCK / "alto-plano-aprovado", case)
+                (case / "plano/review-verdict.md").write_text(approved + tail, encoding="utf-8")
+                self.assertEqual(["artefatos do plano fora do contrato de T006"], write_unlock_problems(case))
+        list_code = "\n## Notas do revisor\n\nValor P[1] literal.\n\n- item\n\n      [1]: #\n"
+        self.assertEqual([], verdict_problems(approved + list_code))
         for name, tail in visible.items():
             with self.subTest(case=name):
                 self.assertTrue([problem for problem in verdict_problems(approved + tail)
