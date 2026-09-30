@@ -111,28 +111,57 @@ def table_end(lines: list[str], start: int) -> int:
     return end
 
 
+SEPARATOR = r"\|(?: ?:?-+:? ?\|)+"
+FINDINGS_HEADING = re.compile(r"(?i)^#{1,6}\s.*achad")
+
+
+def cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.removeprefix("|").removesuffix("|").split("|")]
+
+
 def finding_rows(text: str) -> list[list[str]]:
-    """Todas as linhas da tabela de achados, do separador até a primeira linha fora da tabela."""
+    """Linhas da tabela de achados do modelo e de toda seção posterior de achados."""
     lines, start = table_lines(text)
     if start is None:
         return []
-    return [[cell.strip() for cell in line.removeprefix("|").removesuffix("|").split("|")]
-            for line in lines[start + 1:table_end(lines, start)]
-            if not re.fullmatch(r"\|(?: ?:?-+:? ?\|)+", line)]
+    return [cells(line) for line in lines[start + 1:table_end(lines, start)]
+            if not re.fullmatch(SEPARATOR, line)] + other_finding_lines(text)[0]
 
 
 def unparsed_finding_lines(text: str) -> list[str]:
-    """Fail-closed: linha com `|` depois da tabela, na mesma seção, não é ignorada em silêncio."""
+    """Fail-closed: linha com aparência de achado que não pode ser lida como achado bloqueia."""
+    return other_finding_lines(text)[1]
+
+
+def other_finding_lines(text: str) -> tuple[list[list[str]], list[str]]:
+    """Fora da tabela do modelo, nenhum cabeçalho encerra a busca por achados.
+
+    Em seção cujo título fala de achados, cada linha de tabela é achado e qualquer outra linha
+    com `|` é não interpretável. Fora dela, tabelas de outras finalidades (como a de condições do
+    parecer) são ignoradas, salvo linha com a forma de achado: mesmo número de colunas do modelo
+    ou célula iniciada por severidade `P<n>`. Na seção da tabela, depois dela, vale a regra anterior.
+    """
     lines, start = table_lines(text)
     if start is None:
-        return []
-    unparsed = []
-    for line in lines[table_end(lines, start):]:
-        if line.startswith("#"):
-            break
-        if "|" in line:
+        return [], []
+    end, columns = table_end(lines, start), len(cells(lines[start]))
+    rows, unparsed, in_findings, same_section = [], [], False, False
+    for index, line in enumerate(lines):
+        if start <= index < end:
+            continue
+        same_section = same_section or index == end
+        heading = re.match(r"#{1,6}(?:\s|$)", line) is not None
+        if heading:
+            in_findings, same_section = FINDINGS_HEADING.match(line) is not None, False
+        if "|" not in line:
+            continue
+        shaped = len(cells(line)) == columns or any(re.match(r"(?i)P\d", cell) for cell in cells(line))
+        if in_findings and not same_section and not heading and line.startswith("|"):
+            if not line.startswith("| ID ") and not re.fullmatch(SEPARATOR, line):
+                rows.append(cells(line))
+        elif same_section or in_findings or shaped:
             unparsed.append(line)
-    return unparsed
+    return rows, unparsed
 
 
 def findings(text: str) -> list[tuple[str, str]]:
@@ -567,6 +596,41 @@ class ReviewHandoffTest(unittest.TestCase):
         self.assertTrue(case.is_dir(), "fixture ausente: critico-gate-pessoa-espacada")
         self.assertEqual(["gate humano sem pessoa registrada"], write_unlock_problems(case))
         self.assertEqual([], write_unlock_problems(ROOT / WRITE_UNLOCK / "critico-completo"))
+
+    def test_blocking_finding_after_new_heading_keeps_write_locked(self) -> None:
+        case = ROOT / WRITE_UNLOCK / "alto-aprovado-com-p1-apos-cabecalho"
+        self.assertTrue(case.is_dir(), "fixture ausente: alto-aprovado-com-p1-apos-cabecalho")
+        self.assertEqual(["Verdict APROVADO com achado P0 ou P1"], write_unlock_problems(case))
+        hidden = (case / "plano/review-verdict.md").read_text(encoding="utf-8")
+        self.assertEqual([("P-1", "P3"), ("P-2", "P1")], [(row[0], row[1]) for row in finding_rows(hidden)])
+        approved = (ROOT / WRITE_UNLOCK / "alto-plano-aprovado/plano/review-verdict.md").read_text(encoding="utf-8")
+        blocked = {
+            "achado malformado em seção de achados": "\n## Achados complementares\n\nP-2 | P1 | fonte | impacto\n",
+            "achado em seção sem título de achados": "\n## Notas do revisor\n\n| P-2 | P1 | fonte | impacto | correção |\n",
+        }
+        for name, tail in blocked.items():
+            with self.subTest(case=name):
+                self.assertTrue([problem for problem in verdict_problems(approved + tail)
+                                 if problem.startswith("linha de achado não interpretável")])
+        template = (ROOT / VERDICT_TEMPLATE).read_text(encoding="utf-8")
+        accepted = {
+            "P3 depois de novo cabeçalho": ("\n## Achados complementares\n\n| P-2 | P3 | fonte | impacto | correção |\n",
+                                            ["P3", "P3"]),
+            "P2 depois de novo cabeçalho": ("\n## Achados complementares\n\n| ID | Severidade P0–P3 | Fonte | Impacto | Correção |\n"
+                                            "| --- | --- | --- | --- | --- |\n| P-2 | P2 | fonte | impacto | correção |\n",
+                                            ["P3", "P2"]),
+            "texto e tabela do parecer": ("\n## Parecer e encaminhamento\n\n" + template[template.index("Valores permitidos"):],
+                                          ["P3"]),
+        }
+        for name, (tail, severities) in accepted.items():
+            with self.subTest(case=name):
+                self.assertEqual([], verdict_problems(approved + tail))
+                self.assertEqual(severities, [severity for severity, _ in findings(approved + tail)])
+        for name, expected in (("alto-aprovado-com-p1-indentado", "Verdict APROVADO com achado P0 ou P1"),
+                               ("alto-verdict-sessao-espacada", "artefatos do plano fora do contrato de T006"),
+                               ("critico-gate-pessoa-espacada", "gate humano sem pessoa registrada")):
+            with self.subTest(ciclo7=name):
+                self.assertEqual([expected], write_unlock_problems(ROOT / WRITE_UNLOCK / name))
 
     def test_plan_gate_addendum_is_recorded_without_rewriting_history(self) -> None:
         spec = (ROOT / "deco/specs/0002-governanca-sdd/spec.md").read_text(encoding="utf-8")
