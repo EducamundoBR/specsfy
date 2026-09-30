@@ -103,11 +103,11 @@ def plain_text(value: str) -> bool:
 
 
 def finding_row_allowed(line: str) -> bool:
-    """Linha da tabela canônica: cinco células, severidade exatamente P0–P3 e as demais em texto simples,
-    sem citar severidade; `\\|` é o único escape aceito dentro da célula."""
+    """Linha da tabela canônica: cinco células preenchidas, severidade exatamente P0–P3 e as demais em
+    texto simples, sem citar severidade; `\\|` é o único escape aceito dentro da célula."""
     row = [cell.strip() for cell in re.split(r"(?<!\\)\|", line.removeprefix("|").removesuffix("|"))]
     return (line.endswith("|") and len(row) == VERDICT_TABLE_HEADER.count("|") - 1
-            and row[1] in {"P0", "P1", "P2", "P3"}
+            and row[1] in {"P0", "P1", "P2", "P3"} and all(row)
             and all(plain_text(cell.replace("\\|", "")) for index, cell in enumerate(row) if index != 1))
 
 

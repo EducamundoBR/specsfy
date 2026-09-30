@@ -1670,7 +1670,8 @@ aceito não foi contornado para satisfazer esse defeito do validador.
      Verdict.
   2. **Sintaxe permitida**: a tabela de achados do modelo é a única fonte de P0,
      P1, P2 e P3 (no máximo uma, com cabeçalho exato, separador e uma linha por
-     achado, com severidade exatamente P0, P1, P2 ou P3 e as demais células em
+     achado, com as cinco células preenchidas, severidade exatamente P0, P1, P2
+     ou P3 e as demais células em
      texto simples, sem citar severidade). Fora dela, o Verdict aceita somente
      linhas em branco, título `#`
      na primeira linha, os cabeçalhos `##` do modelo no máximo uma vez e na ordem

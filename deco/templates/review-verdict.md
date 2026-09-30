@@ -65,7 +65,8 @@ Adendo de 30/09/2026, por decisão humana: o Verdict é conferido pela estrutura
 sem interpretar a apresentação do Markdown.
 
 - A tabela de achados deste modelo é a única fonte de P0, P1, P2 e P3: no máximo
-  uma, com o cabeçalho exato, o separador e uma linha por achado.
+  uma, com o cabeçalho exato, o separador e uma linha por achado, com as cinco
+  células preenchidas.
 - Fora dela, o Verdict contém somente título `#` na primeira linha, os cabeçalhos
   `##` deste modelo no máximo uma vez e na ordem do modelo, os campos deste modelo
   (uma vez cada), linhas idênticas à prosa e à tabela de condições deste modelo e
