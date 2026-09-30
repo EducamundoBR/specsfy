@@ -70,9 +70,10 @@ sem interpretar a apresentação do Markdown.
   `##` deste modelo no máximo uma vez e na ordem do modelo, os campos deste modelo
   (uma vez cada), linhas idênticas à prosa e à tabela de condições deste modelo e
   texto simples.
-- Texto simples, valores de campo e células não usam `[`, `]`, `<`, `>`, crase,
-  `*`, `~`, `$`, barra invertida, entidade HTML nem `_` fora de palavra; nas
-  células, a única barra invertida aceita é a de `\|`.
+- Texto simples, valores de campo e células usam só letras, números, pontuação,
+  símbolos e o espaço comum, e não usam `[`, `]`, `<`, `>`, crase, `*`, `~`, `$`,
+  barra invertida, entidade HTML nem `_` fora de palavra; nas células, a única
+  barra invertida aceita é a de `\|`.
 - A coluna de severidade contém exatamente P0, P1, P2 ou P3. Texto simples,
   valores de campo e as demais células não citam severidade `P<n>` nem terminam
   em `P` isolado.

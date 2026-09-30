@@ -712,7 +712,8 @@ class ReviewHandoffTest(unittest.TestCase):
             "tag HTML": "P<span>1</span>", "atributo com >": 'P<span title=">">1</span>', "código inline": "`P1`",
             "escape de barra": "P\\1", "link": "[P](#)1", "imagem": "![P](x.png)1", "link com parênteses":
             "[P](docs/item(v2).md)1", "referência abreviada": "[P]1", "referência recolhida": "[P][]1",
-            "matemática": "$P_1$", "ênfase com sublinhado": "_P_1",
+            "matemática": "$P_1$", "ênfase com sublinhado": "_P_1", "marca combinante invisível": "P\u034f1",
+            "seletor de variação": "P\ufe0f1", "espaço fino": "P\u20091", "separador de linha": "P\u20281",
         }
         blocked = {f"{name} em texto": f"\nNota do revisor: {value} contrato aberto.\n" for name, value in severities.items()}
         blocked |= {f"{name} em campo": approved.replace("- **Condições**: nenhuma", f"- **Condições**: {value}")

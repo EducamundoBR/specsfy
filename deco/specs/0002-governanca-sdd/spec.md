@@ -1680,7 +1680,9 @@ aceito não foi contornado para satisfazer esse defeito do validador.
      escape aceito.
   3. **Sintaxe rejeitada**: em texto, valores de campo e células, `[`, `]`, `<`,
      `>`, crase, `*`, `~`, `$`, barra invertida, entidade HTML, `_` fora de
-     palavra e caractere invisível de formatação. Em texto e valores de campo,
+     palavra e qualquer caractere fora da lista de permissão (depois de NFC, só
+     letras, números, pontuação, símbolos e o espaço comum; marcas, controles,
+     formatação e outros espaços bloqueiam). Em texto e valores de campo,
      também a citação de severidade `P<n>`, o `P` isolado no fim da linha (que a
      quebra suave juntaria ao dígito seguinte) e as linhas iniciadas por recuo,
      citação, marcador de lista, lista numerada ou sublinhado de título. Também

@@ -87,8 +87,11 @@ BLOCK_START = re.compile(r"\s|[-+*>](?:\s|$)|\d{1,9}[.)](?:\s|$)|[=-]+$")
 
 
 def markup_free(value: str) -> bool:
-    """Sem marcação capaz de alterar a apresentação e sem caractere invisível de formatação."""
-    return MARKUP.search(value) is None and all(unicodedata.category(char) != "Cf" for char in value)
+    """Sem marcação capaz de alterar a apresentação. Lista de permissão: depois de NFC, só letras,
+    números, pontuação, símbolos e o espaço comum; marcas, controles, formatação e outros espaços
+    (invisíveis ou ignoráveis na apresentação) bloqueiam."""
+    return MARKUP.search(value) is None and all(
+        char == " " or unicodedata.category(char)[0] in "LNPS" for char in unicodedata.normalize("NFC", value))
 
 
 def plain_text(value: str) -> bool:
@@ -404,7 +407,8 @@ class GovernanceRoundsTest(unittest.TestCase):
         cases = {
             "sessão registrada": (valid, []),
             "espaço duplo": (spaced, ["campo NÃO REGISTRADO: Session ID"]),
-            "tab interno": (spaced.replace("NÃO  REGISTRADO", "NÃO\tREGISTRADO"), ["campo NÃO REGISTRADO: Session ID"]),
+            "tab interno": (spaced.replace("NÃO  REGISTRADO", "NÃO\tREGISTRADO"), [
+                "campo NÃO REGISTRADO: Session ID", "linha fora do contrato do Verdict: - **Session ID**: NÃO\tREGISTRADO"]),
         }
         for name, (text, expected) in cases.items():
             with self.subTest(case=name):
